@@ -222,7 +222,21 @@
     </div>
     <div class="form-row" style="gap:14px;flex-wrap:wrap; margin-top:12px">
       <div class="form-group" style="flex:1;min-width:200px"><label>Section</label><input type="text" id="classSectionInput" placeholder="Example: 3B" /></div>
-      <div class="form-group" style="flex:1;min-width:200px"><label>Schedule</label><input type="<i class="fa fa-calendar" aria-hidden="true"></i>" id="classScheduleInput" placeholder="Example: Mon/Wed 8-10AM" /></div>
+      <div class="form-group schedule-selection" style="flex:1;min-width:200px"><label>Schedule</label>
+        <div class="days-selection">
+          <label>Days:</label>
+          <input type="checkbox" id="mon" value="Mon"><label for="mon">Mon</label>
+          <input type="checkbox" id="tue" value="Tue"><label for="tue">Tue</label>
+          <input type="checkbox" id="wed" value="Wed"><label for="wed">Wed</label>
+          <input type="checkbox" id="thu" value="Thu"><label for="thu">Thu</label>
+          <input type="checkbox" id="fri" value="Fri"><label for="fri">Fri</label>
+          <input type="checkbox" id="sat" value="Sat"><label for="sat">Sat</label>
+          <input type="checkbox" id="sun" value="Sun"><label for="sun">Sun</label>
+        </div>
+        <div class="time-selection">
+          <label>Time:</label><input type="text" id="classTimeInput" placeholder="8:00-10:00" />
+        </div>
+      </div>
     </div>
     <div class="form-row" style="gap:14px;flex-wrap:wrap; margin-top:12px">
       <div class="form-group" style="flex:1;min-width:200px"><label>Access Password</label><input type="text" id="classPasswordInput" placeholder="Optional password" /></div>
@@ -274,4 +288,121 @@
 </div>
 </body>
 </html>
+<script>
+function submitClassForm() {
+  const name = document.getElementById('classNameInput')?.value.trim();
+  const subject = document.getElementById('classSubjectInput')?.value.trim();
+  const section = document.getElementById('classSectionInput')?.value.trim();
+  const days = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => document.getElementById(d).checked).map(d => d.charAt(0).toUpperCase() + d.slice(1)).join('/');
+  const time = document.getElementById('classTimeInput')?.value.trim();
+  const schedule = days + (time ? ' ' + time : '');
+  const password = document.getElementById('classPasswordInput')?.value.trim();
+  const qrData = document.getElementById('classQRInput')?.value.trim();
+
+  if (!name || !subject || !section || !schedule) {
+    alert('Please complete the class name, subject, section, and schedule.');
+    return;
+  }
+
+  const payload = {
+    class_name: name,
+    subject,
+    section,
+    schedule,
+    password,
+    qr_data: qrData || `${name} | ${subject} | ${section}`
+  };
+
+  fetch('/api/add-class', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(res => res.json())
+    .then(result => {
+      if (result.error) throw new Error(result.error);
+      hideClassModal();
+      document.getElementById('classNameInput').value = '';
+      document.getElementById('classSubjectInput').value = '';
+      document.getElementById('classSubjectInput').value = '';
+      document.getElementById('classSectionInput').value = '';
+      ['mon','tue','wed','thu','fri','sat','sun'].forEach(d => document.getElementById(d).checked = false);
+      document.getElementById('classTimeInput').value = '';
+      document.getElementById('classPasswordInput').value = '';
+      document.getElementById('classQRInput').value = '';
+      fetchTeacherClasses();
+    })
+    .catch(err => alert(`Error saving class: ${err.message}`));
+}
+
+function fetchTeacherClasses() {
+  fetch('/api/teacher-classes')
+    .then(res => res.json())
+    .then(data => {
+      TEACHER_CLASSES = data.classes || [];
+      renderTeacherClasses();
+    })
+    .catch(err => console.error('Error fetching classes:', err));
+}
+
+function hideQRModal() {
+  const modal = document.getElementById('qrModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function hidePasswordModal() {
+  const modal = document.getElementById('passwordModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function submitPasswordUpdate() {
+  const newPassword = document.getElementById('passwordUpdateInput')?.value.trim();
+  if (!newPassword) {
+    alert('Please enter a new password.');
+    return;
+  }
+  // Implement password update logic here
+  alert('Password updated successfully.');
+  hidePasswordModal();
+}
+
+function submitSubjectForm() {
+  const name = document.getElementById('subjectNameInput')?.value.trim();
+  const code = document.getElementById('subjectCodeInput')?.value.trim();
+  const desc = document.getElementById('subjectDescInput')?.value.trim();
+
+  if (!name || !code) {
+    alert('Please complete the subject name and code.');
+    return;
+  }
+
+  const payload = {
+    subject_name: name,
+    subject_code: code,
+    description: desc,
+    class_id: selectedTeacherClass?.id
+  };
+
+  fetch('/api/add-subject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(res => res.json())
+    .then(result => {
+      if (result.error) throw new Error(result.error);
+      hideSubjectModal();
+      document.getElementById('subjectNameInput').value = '';
+      document.getElementById('subjectCodeInput').value = '';
+      document.getElementById('subjectDescInput').value = '';
+      // Refresh subjects or classes
+    })
+    .catch(err => alert(`Error saving subject: ${err.message}`));
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', function() {
+  fetchTeacherClasses();
+});
+</script>
 

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Attendance</title>
+<link rel="stylesheet" href="/style.css"></head>
+
+<body>
+
+<div class="container">
+
+    <h1>Smart Attendance System</h1>
+    <p>Welcome to Laguna University</p>
+
+    <% if (error) { %>
+        <div class="error-message"><%= error %></div>
+    <% } %>
+
+<form method="POST" action="/login" id="loginForm">
+        <div class="info-box">
+
+            <label>Email:</label>
+            <input type="text" name="email" placeholder="Enter Email" value="<%= email || '' %>" required>
+
+            <label>Password:</label>
+            <input type="password" name="password" placeholder="Enter Password" required>
+
+            <button type="submit">Login</button>
+
+        </div>
+    </form>
+
+<div class="register">
+<p>Don't have an account?<a href="/register">Register</a></p>
+
+</div>
+</div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">Logging in...</p>
+    </div>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('submit', function(e) {
+    // Show loading overlay
+    document.getElementById('loadingOverlay').classList.add('show');
+
+    // Disable the submit button to prevent multiple submissions
+    const submitBtn = this.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Logging in...';
+});
+</script>
+
+</body>
+</html>

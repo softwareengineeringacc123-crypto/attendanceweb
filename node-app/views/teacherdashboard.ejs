@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard | Attendance</title>
+    <link rel="stylesheet" href="/dashboardstyle.css">
+</head>
+<body>
+    <div class="app">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="sidebar-top">
+                <div class="brand">
+                    <div class="brand-mark">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                    </div>
+                    <div>
+                        <div class="brand-name">AttendTrack</div>
+                        <div class="brand-sub">Teacher Portal</div>
+                    </div>
+                </div>
+                <div class="student-card">
+                    <div class="student-avatar"><%= (sessionUser.name || 'T')[0].toUpperCase() %></div>
+                    <div class="student-name"><%= sessionUser.name || 'Teacher' %></div>
+                    <div class="student-meta"><%= sessionUser.email %></div>
+                    <div class="student-id">Role: <%= sessionUser.role %></div>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section-label">Main</div>
+                <a class="nav-item active" href="#dashboard">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+                    Dashboard
+                    <span class="nav-active-dot"></span>
+                </a>
+                <div class="nav-section-label" style="margin-top:8px">Classes</div>
+                <a class="nav-item" onclick="openClassModal()">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    New Class
+                </a>
+                <div class="nav-section-label" style="margin-top:8px">Account</div>
+                <a class="nav-item" href="/logout">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    Logout
+                </a>
+            </nav>
+        </aside>
+
+        <div class="main">
+            <!-- HEADER -->
+            <header>
+                <div class="header-left">
+                    <div class="hamburger">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <div>
+                        <div class="page-title">Dashboard</div>
+                        <div class="page-sub">Welcome back, <%= sessionUser.name || 'Teacher' %></div>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <div class="time-pill">
+                        <div class="time-dot"></div>
+                        <span id="liveTime">—</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- CONTENT -->
+            <div class="content">
+                <div class="page-header animate-in">
+                    <h2>Good morning, <%= sessionUser.name || 'Teacher' %> 👋</h2>
+                    <p>Manage your classes and attendance</p>
+                </div>
+
+                <div class="dash-grid">
+                    <div class="card scale-in">
+                        <div class="card-header">
+                            <h3>My Classes</h3>
+                            <button class="btn btn-primary" onclick="openClassModal()">+ New Class</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="classList" class="class-list">
+                                <div class="class-item" style="cursor:default">No classes yet. Create one to begin.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card scale-in">
+                        <div class="card-header">
+                            <h3>Recent Activity</h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Class management features will be available here.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Class Modal -->
+    <div class="modal-backdrop" id="classModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.75);backdrop-filter:blur(4px);z-index:1200;align-items:center;justify-content:center;padding:20px">
+        <div class="card" style="max-width:560px;width:100%;padding:28px;position:relative">
+            <button type="button" onclick="hideClassModal()" style="position:absolute;top:18px;right:18px;border:none;background:none;color:var(--ink5);font-size:20px;cursor:pointer">×</button>
+            <h3 style="margin-bottom:14px">Create New Class</h3>
+            <div class="form-row" style="gap:14px;flex-wrap:wrap">
+                <div class="form-group" style="flex:1;min-width:200px"><label>Class Name</label><input type="text" id="classNameInput" placeholder="Example: CS201" /></div>
+                <div class="form-group" style="flex:1;min-width:200px"><label>Subject</label><input type="text" id="classSubjectInput" placeholder="Example: Data Structures" /></div>
+            </div>
+            <div class="form-row" style="gap:14px;flex-wrap:wrap; margin-top:12px">
+                <div class="form-group" style="flex:1;min-width:200px"><label>Section</label><input type="text" id="classSectionInput" placeholder="Example: 3B" /></div>
+                <div class="form-group schedule-selection" style="flex:1;min-width:200px"><label>Schedule</label>
+                    <div class="days-selection">
+                        <label>Days:</label>
+                        <input type="checkbox" id="mon" value="Mon"><label for="mon">Mon</label>
+                        <input type="checkbox" id="tue" value="Tue"><label for="tue">Tue</label>
+                        <input type="checkbox" id="wed" value="Wed"><label for="wed">Wed</label>
+                        <input type="checkbox" id="thu" value="Thu"><label for="thu">Thu</label>
+                        <input type="checkbox" id="fri" value="Fri"><label for="fri">Fri</label>
+                        <input type="checkbox" id="sat" value="Sat"><label for="sat">Sat</label>
+                        <input type="checkbox" id="sun" value="Sun"><label for="sun">Sun</label>
+                    </div>
+                    <div class="time-selection">
+                        <label>Time:</label><input type="text" id="classTimeInput" placeholder="8:00-10:00" />
+                    </div>
+                </div>
+            </div>
+            <div class="form-row" style="gap:14px;flex-wrap:wrap; margin-top:12px">
+                <div class="form-group" style="flex:1;min-width:200px"><label>Access Password</label><input type="text" id="classPasswordInput" placeholder="Optional password" /></div>
+                <div class="form-group" style="flex:1;min-width:200px"><label>QR Code Text</label><input type="text" id="classQRInput" placeholder="Optional QR content" /></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:22px">
+                <button class="btn btn-ghost" type="button" onclick="hideClassModal()">Cancel</button>
+                <button class="btn btn-primary" type="button" onclick="submitClassForm()">Save Class</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/teacherdata.js"></script>
