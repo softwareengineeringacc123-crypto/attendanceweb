@@ -4,29 +4,29 @@
 
 // DATA — Full Semester (Jan 6 – Mar 26, 2026)
 const SUBJECTS = [
-  {id:'prog1',  name:'Programming 1',      color:'#6366F1', days:['Mon','Wed'], time:'8:00 – 9:00 AM',   room:'CL-201', teacher:'Mr. Ramon Dela Cruz'},
-  {id:'ds',     name:'Data Structures',    color:'#0EA5E9', days:['Mon','Thu'], time:'9:15 – 10:15 AM',  room:'CL-305', teacher:'Dr. Maria Santos'},
-  {id:'algo',   name:'Algorithms',         color:'#10B981', days:['Tue','Thu'], time:'10:30 – 11:30 AM', room:'CL-101', teacher:'Prof. Jose Reyes'},
-  {id:'dbs',    name:'Database Systems',   color:'#F59E0B', days:['Tue','Fri'], time:'12:30 – 1:30 PM',  room:'CL-404', teacher:'Dr. Ana Lim'},
-  {id:'cn',     name:'Computer Networks',  color:'#EF4444', days:['Wed','Fri'], time:'1:45 – 2:45 PM',   room:'CL-202', teacher:'Engr. Carlo Bautista'},
-  {id:'se',     name:'Software Eng.',      color:'#8B5CF6', days:['Mon','Thu'], time:'3:00 – 4:00 PM',   room:'CL-301', teacher:'Prof. Grace Tan'},
+  { id: 'prog1', name: 'Programming 1', color: '#6366F1', days: ['Mon', 'Wed'], time: '8:00 – 9:00 AM', room: 'CL-201', teacher: 'Mr. Ramon Dela Cruz' },
+  { id: 'ds', name: 'Data Structures', color: '#0EA5E9', days: ['Mon', 'Thu'], time: '9:15 – 10:15 AM', room: 'CL-305', teacher: 'Dr. Maria Santos' },
+  { id: 'algo', name: 'Algorithms', color: '#10B981', days: ['Tue', 'Thu'], time: '10:30 – 11:30 AM', room: 'CL-101', teacher: 'Prof. Jose Reyes' },
+  { id: 'dbs', name: 'Database Systems', color: '#F59E0B', days: ['Tue', 'Fri'], time: '12:30 – 1:30 PM', room: 'CL-404', teacher: 'Dr. Ana Lim' },
+  { id: 'cn', name: 'Computer Networks', color: '#EF4444', days: ['Wed', 'Fri'], time: '1:45 – 2:45 PM', room: 'CL-202', teacher: 'Engr. Carlo Bautista' },
+  { id: 'se', name: 'Software Eng.', color: '#8B5CF6', days: ['Mon', 'Thu'], time: '3:00 – 4:00 PM', room: 'CL-301', teacher: 'Prof. Grace Tan' },
 ];
 
 const TODAY = new Date();
-const TODAY_LABEL = TODAY.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-const SEMESTER_AY = `2nd Semester, A.Y. ${TODAY.getFullYear()-1}–${TODAY.getFullYear()}`;
+const TODAY_LABEL = TODAY.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+const SEMESTER_AY = `2nd Semester, A.Y. ${TODAY.getFullYear() - 1}–${TODAY.getFullYear()}`;
 
-const VIEW_META={
-  dashboardView:{title:'Dashboard',sub:`Overview · Today, ${TODAY_LABEL}`},
-  attendanceView:{title:'Attendance History',sub:SEMESTER_AY},
-  scheduleView:{title:'Weekly Schedule',sub:''},
-  settingsView:{title:'Settings',sub:'Profile & Preferences'},
+const VIEW_META = {
+  dashboardView: { title: 'Dashboard', sub: `Overview · Today, ${TODAY_LABEL}` },
+  attendanceView: { title: 'Attendance History', sub: SEMESTER_AY },
+  scheduleView: { title: 'Weekly Schedule', sub: '' },
+  settingsView: { title: 'Settings', sub: 'Profile & Preferences' },
 };
 
-const PAGE_SIZE=20;
-let currentPage=1;
-let currentFilter='all', currentMonth='all', currentSubject='all';
-let ALL_RECORDS=[];
+const PAGE_SIZE = 20;
+let currentPage = 1;
+let currentFilter = 'all', currentMonth = 'all', currentSubject = 'all';
+let ALL_RECORDS = [];
 
 const NOTIFICATIONS = [
   {
@@ -62,14 +62,14 @@ const NOTIFICATIONS = [
 function generateSemesterData() {
   const records = [];
   const start = new Date('2026-01-06');
-  const end   = new Date(TODAY); end.setHours(0,0,0,0);
-  const dayMap = {0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat'};
-  const statuses = ['present','present','present','present','present','present','absent','late','excused'];
+  const end = new Date(TODAY); end.setHours(0, 0, 0, 0);
+  const dayMap = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+  const statuses = ['present', 'present', 'present', 'present', 'present', 'present', 'absent', 'late', 'excused'];
 
   let seed = 42;
-  function rand() { seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; }
+  function rand() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
 
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const dow = dayMap[d.getDay()];
     SUBJECTS.forEach(subj => {
       if (!subj.days.includes(dow)) return;
@@ -80,53 +80,53 @@ function generateSemesterData() {
       else if (r < 0.82) status = 'late';
       else if (r < 0.93) status = 'absent';
       else status = 'excused';
-      records.push({date: iso, dow, subjId: subj.id, subjName: subj.name, time: subj.time, room: subj.room, status});
+      records.push({ date: iso, dow, subjId: subj.id, subjName: subj.name, time: subj.time, room: subj.room, status });
     });
   }
   return records;
 }
 
 function getCounts(records) {
-  return records.reduce((a,r) => {
-    a[r.status] = (a[r.status]||0)+1;
+  return records.reduce((a, r) => {
+    a[r.status] = (a[r.status] || 0) + 1;
     a.total++;
     return a;
-  },{present:0,absent:0,late:0,excused:0,total:0});
+  }, { present: 0, absent: 0, late: 0, excused: 0, total: 0 });
 }
 
 // LIVE CLOCK
-function updateClock(){
-  const n=new Date(),h=n.getHours(),m=n.getMinutes(),s=n.getSeconds();
-  const ap=h>=12?'PM':'AM',hh=h%12||12;
-  document.getElementById('liveTime').textContent=`${String(hh).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} ${ap}`;
+function updateClock() {
+  const n = new Date(), h = n.getHours(), m = n.getMinutes(), s = n.getSeconds();
+  const ap = h >= 12 ? 'PM' : 'AM', hh = h % 12 || 12;
+  document.getElementById('liveTime').textContent = `${String(hh).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} ${ap}`;
 }
 
 // DYNAMIC GREETING
 function updateGreeting() {
   const h = new Date().getHours();
   let salutation;
-  if (h >= 5 && h < 12)       salutation = 'Good morning';
+  if (h >= 5 && h < 12) salutation = 'Good morning';
   else if (h >= 12 && h < 18) salutation = 'Good afternoon';
   else if (h >= 18 && h < 22) salutation = 'Good evening';
-  else                         salutation = 'Good night';
+  else salutation = 'Good night';
   const el = document.getElementById('dashGreeting');
   if (el) el.textContent = `${salutation}, Wency 👋`;
 }
 
 // DASHBOARD STATS
-function animCount(el,target,dur=700){
-  if(!el)return;
-  const st=performance.now();
-  (function step(now){
-    const p=Math.min((now-st)/dur,1);
-    const e=1-Math.pow(1-p,3);
-    el.textContent=Math.round(e*target);
-    if(p<1)requestAnimationFrame(step);
-    else el.textContent=target;
+function animCount(el, target, dur = 700) {
+  if (!el) return;
+  const st = performance.now();
+  (function step(now) {
+    const p = Math.min((now - st) / dur, 1);
+    const e = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(e * target);
+    if (p < 1) requestAnimationFrame(step);
+    else el.textContent = target;
   })(performance.now());
 }
 
-function renderDashboard(){
+function renderDashboard() {
   updateGreeting();
 
   // Dynamic date labels
@@ -140,99 +140,99 @@ function renderDashboard(){
   const todaySchedEl = document.getElementById('todayScheduleDate');
   if (todaySchedEl) todaySchedEl.textContent = `${TODAY_LABEL} · 6 subjects`;
 
-  const c=getCounts(ALL_RECORDS);
-  const rate=c.total?Math.round((c.present/c.total)*100):0;
+  const c = getCounts(ALL_RECORDS);
+  const rate = c.total ? Math.round((c.present / c.total) * 100) : 0;
 
-  animCount(document.getElementById('dashPresent'),c.present);
-  animCount(document.getElementById('dashAbsent'),c.absent);
-  animCount(document.getElementById('dashLate'),c.late);
+  animCount(document.getElementById('dashPresent'), c.present);
+  animCount(document.getElementById('dashAbsent'), c.absent);
+  animCount(document.getElementById('dashLate'), c.late);
 
-  document.getElementById('dashRate').textContent=rate+'%';
-  document.getElementById('dashRateTrend').textContent=rate+'%';
-  document.getElementById('sidebarRate').textContent=rate+'%';
+  document.getElementById('dashRate').textContent = rate + '%';
+  document.getElementById('dashRateTrend').textContent = rate + '%';
+  document.getElementById('sidebarRate').textContent = rate + '%';
 
-  document.getElementById('absentTrend').textContent=c.absent<=5?'✓ OK':'! High';
+  document.getElementById('absentTrend').textContent = c.absent <= 5 ? '✓ OK' : '! High';
 
-  setTimeout(()=>{
-    const circum=113.1;
-    const offset=circum-(rate/100)*circum;
-    document.getElementById('rateRingFill').style.strokeDashoffset=offset;
-  },300);
+  setTimeout(() => {
+    const circum = 113.1;
+    const offset = circum - (rate / 100) * circum;
+    document.getElementById('rateRingFill').style.strokeDashoffset = offset;
+  }, 300);
 
-  document.getElementById('sidebarAbsentBadge').textContent=c.absent;
+  document.getElementById('sidebarAbsentBadge').textContent = c.absent;
 }
 
 // ATTENDANCE TABLE
-const BADGE_MAP={
-  present:`<span class="badge badge-present"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Present</span>`,
-  absent:`<span class="badge badge-absent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>Absent</span>`,
-  late:`<span class="badge badge-late"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg>Late</span>`,
-  excused:`<span class="badge badge-excused"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Excused</span>`,
+const BADGE_MAP = {
+  present: `<span class="badge badge-present"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Present</span>`,
+  absent: `<span class="badge badge-absent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>Absent</span>`,
+  late: `<span class="badge badge-late"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg>Late</span>`,
+  excused: `<span class="badge badge-excused"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Excused</span>`,
 };
 
-function getFilteredRecords(){
-  return ALL_RECORDS.filter(r=>{
-    if(currentFilter!=='all'&&r.status!==currentFilter)return false;
-    if(currentMonth!=='all'&&!r.date.startsWith(TODAY.getFullYear()+'-'+currentMonth))return false;
-    if(currentSubject!=='all'&&r.subjId!==currentSubject)return false;
+function getFilteredRecords() {
+  return ALL_RECORDS.filter(r => {
+    if (currentFilter !== 'all' && r.status !== currentFilter) return false;
+    if (currentMonth !== 'all' && !r.date.startsWith(TODAY.getFullYear() + '-' + currentMonth)) return false;
+    if (currentSubject !== 'all' && r.subjId !== currentSubject) return false;
     return true;
   });
 }
 
-function renderTable(){
-  const filtered=getFilteredRecords();
-  const total=filtered.length;
-  const totalPages=Math.max(1,Math.ceil(total/PAGE_SIZE));
-  currentPage=Math.min(currentPage,totalPages);
+function renderTable() {
+  const filtered = getFilteredRecords();
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  currentPage = Math.min(currentPage, totalPages);
 
-  const pageRecs=filtered.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+  const pageRecs = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  let html='<table class="att-table"><thead><tr><th>Date</th><th>Day</th><th>Subject</th><th>Time</th><th>Room</th><th>Status</th></tr></thead><tbody>';
+  let html = '<table class="att-table"><thead><tr><th>Date</th><th>Day</th><th>Subject</th><th>Time</th><th>Room</th><th>Status</th></tr></thead><tbody>';
 
-  if(pageRecs.length===0){
-    html+='<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--ink5)">No records found for the selected filter.</td></tr>';
+  if (pageRecs.length === 0) {
+    html += '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--ink5)">No records found for the selected filter.</td></tr>';
   } else {
-    pageRecs.forEach(r=>{
-      const subj=SUBJECTS.find(s=>s.id===r.subjId);
-      html+=`<tr>
+    pageRecs.forEach(r => {
+      const subj = SUBJECTS.find(s => s.id === r.subjId);
+      html += `<tr>
         <td><span class="mono">${r.date}</span></td>
         <td><span class="mono" style="color:var(--ink4)">${r.dow}</span></td>
-        <td><div class="subject-cell"><div class="subject-dot" style="background:${subj?.color||'#888'}"></div>${r.subjName}</div></td>
+        <td><div class="subject-cell"><div class="subject-dot" style="background:${subj?.color || '#888'}"></div>${r.subjName}</div></td>
         <td><span class="mono">${r.time}</span></td>
         <td><span class="mono">${r.room}</span></td>
-        <td>${BADGE_MAP[r.status]||r.status}</td>
+        <td>${BADGE_MAP[r.status] || r.status}</td>
       </tr>`;
     });
   }
-  html+='</tbody></table>';
-  document.getElementById('historyTableWrap').innerHTML=html;
+  html += '</tbody></table>';
+  document.getElementById('historyTableWrap').innerHTML = html;
 
   // Pagination
-  const from=(currentPage-1)*PAGE_SIZE+1;
-  const to=Math.min(currentPage*PAGE_SIZE,total);
-  let paginHTML=`<div class="page-info">Showing <strong>${total>0?from:0}–${to}</strong> of <strong>${total}</strong> records</div><div class="page-btns">`;
-  paginHTML+=`<button class="page-btn" id="pgPrev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>`;
-  const maxBtns=5;
-  let startP=Math.max(1,currentPage-2),endP=Math.min(totalPages,startP+maxBtns-1);
-  if(endP-startP<maxBtns-1)startP=Math.max(1,endP-maxBtns+1);
-  for(let p=startP;p<=endP;p++){
-    paginHTML+=`<button class="page-btn${p===currentPage?' active':''}" data-page="${p}">${p}</button>`;
+  const from = (currentPage - 1) * PAGE_SIZE + 1;
+  const to = Math.min(currentPage * PAGE_SIZE, total);
+  let paginHTML = `<div class="page-info">Showing <strong>${total > 0 ? from : 0}–${to}</strong> of <strong>${total}</strong> records</div><div class="page-btns">`;
+  paginHTML += `<button class="page-btn" id="pgPrev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>`;
+  const maxBtns = 5;
+  let startP = Math.max(1, currentPage - 2), endP = Math.min(totalPages, startP + maxBtns - 1);
+  if (endP - startP < maxBtns - 1) startP = Math.max(1, endP - maxBtns + 1);
+  for (let p = startP; p <= endP; p++) {
+    paginHTML += `<button class="page-btn${p === currentPage ? ' active' : ''}" data-page="${p}">${p}</button>`;
   }
-  paginHTML+=`<button class="page-btn" id="pgNext"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>`;
-  paginHTML+='</div>';
-  document.getElementById('pagination').innerHTML=paginHTML;
+  paginHTML += `<button class="page-btn" id="pgNext"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>`;
+  paginHTML += '</div>';
+  document.getElementById('pagination').innerHTML = paginHTML;
 
-  document.getElementById('pgPrev').onclick=()=>{if(currentPage>1){currentPage--;renderTable();}};
-  document.getElementById('pgNext').onclick=()=>{if(currentPage<totalPages){currentPage++;renderTable();}};
-  document.querySelectorAll('[data-page]').forEach(b=>{
-    b.onclick=()=>{currentPage=parseInt(b.dataset.page);renderTable();};
+  document.getElementById('pgPrev').onclick = () => { if (currentPage > 1) { currentPage--; renderTable(); } };
+  document.getElementById('pgNext').onclick = () => { if (currentPage < totalPages) { currentPage++; renderTable(); } };
+  document.querySelectorAll('[data-page]').forEach(b => {
+    b.onclick = () => { currentPage = parseInt(b.dataset.page); renderTable(); };
   });
 }
 
-function renderSummaryChips(){
-  const c=getCounts(ALL_RECORDS);
-  const rate=c.total?Math.round((c.present/c.total)*100):0;
-  document.getElementById('summaryChips').innerHTML=`
+function renderSummaryChips() {
+  const c = getCounts(ALL_RECORDS);
+  const rate = c.total ? Math.round((c.present / c.total) * 100) : 0;
+  document.getElementById('summaryChips').innerHTML = `
     <div class="chip"><div class="chip-dot" style="background:var(--green)"></div>Present<span class="chip-count" style="color:var(--green)">${c.present}</span></div>
     <div class="chip"><div class="chip-dot" style="background:var(--red)"></div>Absent<span class="chip-count" style="color:var(--red)">${c.absent}</span></div>
     <div class="chip"><div class="chip-dot" style="background:var(--amber)"></div>Late<span class="chip-count" style="color:var(--amber)">${c.late}</span></div>
@@ -242,15 +242,15 @@ function renderSummaryChips(){
   `;
 }
 
-function renderSubjectLegend(){
-  const wrap=document.getElementById('subjectLegend');
-  wrap.innerHTML=`<div class="legend-item active" data-subj="all"><div class="legend-dot" style="background:var(--ink4)"></div>All Subjects</div>`+
-    SUBJECTS.map(s=>`<div class="legend-item" data-subj="${s.id}"><div class="legend-dot" style="background:${s.color}"></div>${s.name}</div>`).join('');
-  wrap.querySelectorAll('.legend-item').forEach(el=>{
-    el.onclick=()=>{
-      currentSubject=el.dataset.subj;
-      currentPage=1;
-      wrap.querySelectorAll('.legend-item').forEach(x=>x.classList.remove('active'));
+function renderSubjectLegend() {
+  const wrap = document.getElementById('subjectLegend');
+  wrap.innerHTML = `<div class="legend-item active" data-subj="all"><div class="legend-dot" style="background:var(--ink4)"></div>All Subjects</div>` +
+    SUBJECTS.map(s => `<div class="legend-item" data-subj="${s.id}"><div class="legend-dot" style="background:${s.color}"></div>${s.name}</div>`).join('');
+  wrap.querySelectorAll('.legend-item').forEach(el => {
+    el.onclick = () => {
+      currentSubject = el.dataset.subj;
+      currentPage = 1;
+      wrap.querySelectorAll('.legend-item').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       renderTable();
     };
@@ -260,7 +260,7 @@ function renderSubjectLegend(){
 function renderNotifications() {
   const container = document.querySelector('#notifDropdown .card-body');
   if (!container) return;
-  
+
   container.innerHTML = NOTIFICATIONS.map(n => `
     <div class="notif-item ${n.unread ? 'unread' : ''}">
       <div class="notif-icon" style="background: ${n.bg}">
@@ -278,33 +278,33 @@ function renderNotifications() {
 }
 
 // EVENT HANDLERS
-document.addEventListener('click',e=>{
-  const fb=e.target.closest('[data-filter]');
-  if(fb){
-    currentFilter=fb.dataset.filter;
-    currentPage=1;
-    document.querySelectorAll('[data-filter]').forEach(b=>b.classList.toggle('active',b===fb));
+document.addEventListener('click', e => {
+  const fb = e.target.closest('[data-filter]');
+  if (fb) {
+    currentFilter = fb.dataset.filter;
+    currentPage = 1;
+    document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('active', b === fb));
     renderTable();
     return;
   }
-  const mb=e.target.closest('[data-month]');
-  if(mb){
-    currentMonth=mb.dataset.month;
-    currentPage=1;
-    document.querySelectorAll('[data-month]').forEach(b=>b.classList.toggle('active',b===mb));
+  const mb = e.target.closest('[data-month]');
+  if (mb) {
+    currentMonth = mb.dataset.month;
+    currentPage = 1;
+    document.querySelectorAll('[data-month]').forEach(b => b.classList.toggle('active', b === mb));
     renderTable();
     return;
   }
 });
 
 // Export CSV
-document.addEventListener('click',e=>{
-  if(e.target.id==='exportBtn'){
-    const rows=getFilteredRecords();
-    const csv=['Date,Day,Subject,Time,Room,Status',...rows.map(r=>`"${r.date}","${r.dow}","${r.subjName}","${r.time}","${r.room}","${r.status}"`)].join('\\n');
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-    a.download='attendance_semester.csv';
+document.addEventListener('click', e => {
+  if (e.target.id === 'exportBtn') {
+    const rows = getFilteredRecords();
+    const csv = ['Date,Day,Subject,Time,Room,Status', ...rows.map(r => `"${r.date}","${r.dow}","${r.subjName}","${r.time}","${r.room}","${r.status}"`)].join('\\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = 'attendance_semester.csv';
     a.click();
   }
 });
@@ -349,14 +349,14 @@ function logout() {
 }
 
 // ── SCHEDULE ──────────────────────────────────────
-const WEEK_DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-const DAY_LABELS = {Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'};
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_LABELS = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
 
 // Time slots every 30 min, 7:00 AM – 7:00 PM
 const TIME_SLOTS = [];
 for (let h = 7; h < 19; h++) {
-  TIME_SLOTS.push(`${String(h).padStart(2,'0')}:00`);
-  TIME_SLOTS.push(`${String(h).padStart(2,'0')}:30`);
+  TIME_SLOTS.push(`${String(h).padStart(2, '0')}:00`);
+  TIME_SLOTS.push(`${String(h).padStart(2, '0')}:30`);
 }
 TIME_SLOTS.push('19:00');
 
@@ -366,9 +366,9 @@ function parseTimeToMinutes(str) {
 }
 
 function getSubjectTimeRange(subj) {
-  const raw = subj.time.replace(/\s*–\s*/g,'–');
+  const raw = subj.time.replace(/\s*–\s*/g, '–');
   const parts = raw.split('–');
-  const endStr = parts[1].replace(/\s*(AM|PM)/i,'').trim();
+  const endStr = parts[1].replace(/\s*(AM|PM)/i, '').trim();
   const startStr = parts[0].trim();
   const isPM = /PM/i.test(parts[1]);
 
@@ -381,30 +381,30 @@ function getSubjectTimeRange(subj) {
   }
 
   let startMin = toMin(startStr, false);
-  let endMin   = toMin(endStr, isPM);
+  let endMin = toMin(endStr, isPM);
   if (endMin <= startMin) endMin += 12 * 60;
   if (startMin < 7 * 60) startMin += 12 * 60;
-  return {startMin, endMin};
+  return { startMin, endMin };
 }
 
 function renderScheduleGrid() {
-  const GRID_START  = 7 * 60; // 7:00 AM in minutes
-  const SLOT_MIN    = 30;
+  const GRID_START = 7 * 60; // 7:00 AM in minutes
+  const SLOT_MIN = 30;
   const TOTAL_SLOTS = 25;     // 7:00 AM → 7:00 PM (slots 0–24)
-  const DAYS        = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const DAY_FULL    = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  const WEEKEND     = new Set(['Sat','Sun']);
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const DAY_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const WEEKEND = new Set(['Sat', 'Sun']);
 
-  function minToSlot(min){ return Math.round((min - GRID_START) / SLOT_MIN); }
+  function minToSlot(min) { return Math.round((min - GRID_START) / SLOT_MIN); }
 
   // Format time label: "7:00", "7:30", "8:00" …
   function slotLabel(slotIdx) {
     const totalMin = GRID_START + slotIdx * SLOT_MIN;
-    const h  = Math.floor(totalMin / 60);
-    const m  = totalMin % 60;
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
     const ap = h >= 12 ? 'PM' : 'AM';
     const hh = h % 12 || 12;
-    return `${hh}:${String(m).padStart(2,'0')}`;
+    return `${hh}:${String(m).padStart(2, '0')}`;
   }
 
   let html = `<div class="sched-outer"><div class="sched-grid">`;
@@ -414,15 +414,15 @@ function renderScheduleGrid() {
 
   // Day headers (grid-row 1, cols 2–8)
   DAYS.forEach((d, i) => {
-    html += `<div class="sg-day-head${WEEKEND.has(d)?' is-weekend':''}" style="grid-column:${i+2};grid-row:1">
+    html += `<div class="sg-day-head${WEEKEND.has(d) ? ' is-weekend' : ''}" style="grid-column:${i + 2};grid-row:1">
       <span>${DAY_FULL[i]}</span>
     </div>`;
   });
 
   // Time gutter + background cells — one row per 30-min slot
   for (let s = 0; s < TOTAL_SLOTS; s++) {
-    const row     = s + 2;                        // row 1 = header
-    const isHour  = (s % 2 === 0);               // even slots = :00, odd = :30
+    const row = s + 2;                        // row 1 = header
+    const isHour = (s % 2 === 0);               // even slots = :00, odd = :30
     const typeClass = isHour ? 'hour' : 'half';
 
     // Time label cell — always visible, always centered
@@ -432,18 +432,18 @@ function renderScheduleGrid() {
 
     // 7 day background cells
     DAYS.forEach((d, i) => {
-      html += `<div class="sg-cell ${typeClass}${WEEKEND.has(d)?' is-weekend':''}" style="grid-column:${i+2};grid-row:${row}"></div>`;
+      html += `<div class="sg-cell ${typeClass}${WEEKEND.has(d) ? ' is-weekend' : ''}" style="grid-column:${i + 2};grid-row:${row}"></div>`;
     });
   }
 
   // Event blocks — placed via grid-column / grid-row (no absolute positioning)
   SUBJECTS.forEach(subj => {
-    const {startMin, endMin} = getSubjectTimeRange(subj);
+    const { startMin, endMin } = getSubjectTimeRange(subj);
     const startSlot = minToSlot(startMin);
-    const endSlot   = minToSlot(endMin);
-    const span      = Math.max(1, endSlot - startSlot);
-    const rowStart  = startSlot + 2;
-    const rowEnd    = rowStart + span;
+    const endSlot = minToSlot(endMin);
+    const span = Math.max(1, endSlot - startSlot);
+    const rowStart = startSlot + 2;
+    const rowEnd = rowStart + span;
     const t1 = slotLabel(startSlot);
     const t2 = slotLabel(endSlot);
 
@@ -451,7 +451,7 @@ function renderScheduleGrid() {
       const colIdx = DAYS.indexOf(dow);
       if (colIdx === -1) return;
       html += `<div class="sg-event" style="
-        grid-column:${colIdx+2};
+        grid-column:${colIdx + 2};
         grid-row:${rowStart}/${rowEnd};
         border-left:3px solid ${subj.color};
         background:${subj.color}1c;
@@ -496,7 +496,7 @@ function minutesToTimeLabel(min) {
   const m = min % 60;
   const ap = h >= 12 ? 'PM' : 'AM';
   const hh = h % 12 || 12;
-  return `${hh}:${String(m).padStart(2,'0')} ${ap}`;
+  return `${hh}:${String(m).padStart(2, '0')} ${ap}`;
 }
 
 function formatHour(ts) {
@@ -507,32 +507,32 @@ function formatHour(ts) {
 }
 
 // VIEW SWITCHING
-function showView(id){
-  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));
-  document.querySelectorAll('[data-target]').forEach(a=>a.classList.toggle('active',a.dataset.target===id));
-  document.getElementById('pageTitle').textContent=VIEW_META[id]?.title||'';
-  document.getElementById('pageSub').textContent=VIEW_META[id]?.sub||'';
-  if(id==='dashboardView') renderDashboard();
-  if(id==='attendanceView'){renderSummaryChips();renderSubjectLegend();renderTable();}
-  if(id==='scheduleView') renderScheduleGrid();
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === id));
+  document.querySelectorAll('[data-target]').forEach(a => a.classList.toggle('active', a.dataset.target === id));
+  document.getElementById('pageTitle').textContent = VIEW_META[id]?.title || '';
+  document.getElementById('pageSub').textContent = VIEW_META[id]?.sub || '';
+  if (id === 'dashboardView') renderDashboard();
+  if (id === 'attendanceView') { renderSummaryChips(); renderSubjectLegend(); renderTable(); }
+  if (id === 'scheduleView') renderScheduleGrid();
 }
 
 // HAMBURGER
-function closeMini(){document.getElementById('miniSidebar').classList.remove('show');document.getElementById('overlay').classList.remove('show');}
-document.addEventListener('click',e=>{
-  if(e.target.id==='hamburger'||e.target.closest('#miniSidebar')){
+function closeMini() { document.getElementById('miniSidebar').classList.remove('show'); document.getElementById('overlay').classList.remove('show'); }
+document.addEventListener('click', e => {
+  if (e.target.id === 'hamburger' || e.target.closest('#miniSidebar')) {
     document.getElementById('miniSidebar').classList.toggle('show');
     document.getElementById('overlay').classList.toggle('show');
     return;
   }
-  if(e.target.id==='overlay') closeMini();
+  if (e.target.id === 'overlay') closeMini();
 });
 
 // INIT
-document.addEventListener('DOMContentLoaded',()=>{
-  ALL_RECORDS=generateSemesterData();
+document.addEventListener('DOMContentLoaded', () => {
+  ALL_RECORDS = generateSemesterData();
   updateClock();
-  setInterval(updateClock,1000);
+  setInterval(updateClock, 1000);
   renderNotifications();
 
   // Load existing profile from storage
@@ -589,13 +589,18 @@ document.addEventListener('DOMContentLoaded',()=>{
   const saveBtn = document.getElementById('saveProfileBtn');
   if (saveBtn) saveBtn.onclick = saveProfile;
 
-  const logoutBtn = document.getElementById('logoutBtn');
-  if (logoutBtn) logoutBtn.onclick = logout;
-  
+  // LOGOUT BUTTON
+  const logoutBtn = document.getElementById("logoutBtn");
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", function () {
+      window.location.href = "/login";
+    });
+  }
   // ── Password & Security ──────────────────────────
-  const passToggle   = document.getElementById('passwordToggle');
+  const passToggle = document.getElementById('passwordToggle');
   const passCollapse = document.getElementById('passwordCollapse');
-  const passChevron  = document.getElementById('passChevron');
+  const passChevron = document.getElementById('passChevron');
   if (passToggle && passCollapse) {
     passToggle.onclick = () => {
       const isHidden = passCollapse.style.display === 'none';
@@ -619,21 +624,21 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Password strength checker
   function checkStrength(pw) {
     const rules = {
-      len:   pw.length >= 8,
+      len: pw.length >= 8,
       upper: /[A-Z]/.test(pw),
       lower: /[a-z]/.test(pw),
-      num:   /[0-9]/.test(pw),
-      sym:   /[^A-Za-z0-9]/.test(pw),
+      num: /[0-9]/.test(pw),
+      sym: /[^A-Za-z0-9]/.test(pw),
     };
     const score = Object.values(rules).filter(Boolean).length;
     return { rules, score };
   }
 
   const STRENGTH_LEVELS = [
-    { label: 'Too weak',  color: '#EF4444', width: '20%'  },
-    { label: 'Weak',      color: '#F97316', width: '40%'  },
-    { label: 'Fair',      color: '#F59E0B', width: '60%'  },
-    { label: 'Strong',    color: '#10B981', width: '80%'  },
+    { label: 'Too weak', color: '#EF4444', width: '20%' },
+    { label: 'Weak', color: '#F97316', width: '40%' },
+    { label: 'Fair', color: '#F59E0B', width: '60%' },
+    { label: 'Strong', color: '#10B981', width: '80%' },
     { label: 'Very strong', color: '#059669', width: '100%' },
   ];
 
@@ -649,8 +654,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 
       if (!pw) {
         strengthWrap.style.display = 'none';
-        ['len','upper','lower','num','sym'].forEach(r => {
-          document.getElementById('req-'+r)?.classList.remove('req-met','req-fail');
+        ['len', 'upper', 'lower', 'num', 'sym'].forEach(r => {
+          document.getElementById('req-' + r)?.classList.remove('req-met', 'req-fail');
         });
         return;
       }
@@ -696,7 +701,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   const lastChanged = localStorage.getItem('attendtrack_pw_changed');
   if (lastChanged) {
     const d = new Date(lastChanged);
-    document.getElementById('lastChangedLabel').textContent = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    document.getElementById('lastChangedLabel').textContent = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   // Change Password submit
@@ -704,7 +709,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   if (changePasswordBtn) {
     changePasswordBtn.onclick = () => {
       const current = document.getElementById('currentPassword').value;
-      const newPw   = newPassInput?.value || '';
+      const newPw = newPassInput?.value || '';
       const confirm = confirmInput?.value || '';
       const successMsg = document.getElementById('passSuccessMsg');
 
@@ -723,7 +728,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       const now = new Date().toISOString();
       localStorage.setItem('attendtrack_pw_changed', now);
       const d = new Date(now);
-      document.getElementById('lastChangedLabel').textContent = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      document.getElementById('lastChangedLabel').textContent = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
       // Clear fields & show success
       document.getElementById('currentPassword').value = '';
@@ -731,8 +736,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       confirmInput.value = '';
       document.getElementById('strengthWrap').style.display = 'none';
       document.getElementById('matchMsg').style.display = 'none';
-      ['len','upper','lower','num','sym'].forEach(r => {
-        document.getElementById('req-'+r)?.classList.remove('req-met','req-fail');
+      ['len', 'upper', 'lower', 'num', 'sym'].forEach(r => {
+        document.getElementById('req-' + r)?.classList.remove('req-met', 'req-fail');
       });
       if (successMsg) {
         successMsg.style.display = 'flex';
@@ -752,8 +757,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     setTimeout(() => el.remove(), 4000);
   }
 
-  document.querySelectorAll('[data-target]').forEach(a=>{
-    a.onclick=e=>{e.preventDefault();showView(a.dataset.target);closeMini();}
+  document.querySelectorAll('[data-target]').forEach(a => {
+    a.onclick = e => { e.preventDefault(); showView(a.dataset.target); closeMini(); }
   });
 
   showView('dashboardView');
