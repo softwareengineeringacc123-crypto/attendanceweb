@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AttendTrack · Student Portal</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app">
+
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="sidebar-top">
+                <div class="brand">
+                    <div class="brand-mark">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 11l3 3L22 4" />
+                            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="brand-name">AttendTrack</div>
+                        <div class="brand-sub">Student Portal</div>
+                    </div>
+                </div>
+                <div class="student-card">
+                    <div class="student-avatar">WB</div>
+                    <div class="student-name">Wency B. Babaan</div>
+                    <div class="student-meta">BSCS-DS · Section 3B</div>
+                    <div class="student-id"># 20230123</div>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section-label">Main</div>
+                <a class="nav-item active" data-target="dashboardView">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    Dashboard
+                    <span class="nav-active-dot"></span>
+                </a>
+                <a class="nav-item" data-target="attendanceView">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 11l3 3L22 4" />
+                        <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                    </svg>
+                    Attendance
+                    <span class="nav-badge" id="sidebarAbsentBadge">0</span>
+                </a>
+                <a class="nav-item" data-target="scheduleView">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    Schedule
+                </a>
+                <div class="nav-section-label" style="margin-top:8px">Account</div>
+                <a class="nav-item" data-target="settingsView">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+                    </svg>
+                    Settings
+                </a>
+            </nav>
+
+            <div class="sidebar-bottom">
+                <div class="sidebar-stat">
+                    <div>
+                        <div class="sidebar-stat-label">Semester Rate</div>
+                        <div class="sidebar-stat-value" id="sidebarRate">—%</div>
+                        <div class="sidebar-stat-sub">Overall attendance</div>
+                    </div>
+                    <svg class="rate-ring" viewBox="0 0 44 44">
+                        <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="4" />
+                        <circle id="rateRingFill" cx="22" cy="22" r="18" fill="none" stroke="#4361EE" stroke-width="4"
+                            stroke-linecap="round" stroke-dasharray="113.1" stroke-dashoffset="113.1"
+                            transform="rotate(-90 22 22)" />
+                    </svg>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MINI SIDEBAR OVERLAY -->
+        <div class="overlay" id="overlay"></div>
+        <div class="mini-sidebar" id="miniSidebar">
+            <div class="mini-brand">Attend<span>Track</span></div>
+            <div class="mini-student">
+                <div class="m-avatar">WB</div>
+                <div class="m-name">Wency B. Babaan</div>
+                <div class="m-meta">BSCS-DS · 3B · #20230123</div>
+            </div>
+            <div class="mini-nav">
+                <a class="active" data-target="dashboardView">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <rect x="3" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    Dashboard
+                </a>
+                <a data-target="attendanceView">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M9 11l3 3L22 4" />
+                        <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                    </svg>
+                    Attendance
+                </a>
+                <a data-target="scheduleView">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    Schedule
+                </a>
+                <a data-target="settingsView">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                    </svg>
+                    Settings
+                </a>
+            </div>
+        </div>
+
+        <div class="main">
+            <!-- HEADER -->
+            <header>
+                <div class="header-left">
+                    <div class="hamburger" id="hamburger">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <div>
+                        <div class="page-title" id="pageTitle">Dashboard</div>
+                        <div class="page-sub" id="pageSub">Overview · Today</div>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <div class="time-pill">
+                        <div class="time-dot"></div>
+                        <span id="liveTime">—</span>
+                    </div>
+                    <div style="position:relative">
+                        <div class="hdr-btn" id="notifBtn" title="Notifications">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                                <path d="M13.73 21a2 2 0 01-3.46 0" />
+                            </svg>
+                            <div class="notif-dot"></div>
+                        </div>
+                        <!-- Notification Dropdown -->
+                        <div id="notifDropdown" class="card"
+                            style="display:none; position:absolute; top:45px; right:0; width:320px; z-index:1000; box-shadow:var(--shadow-lg); animation: scaleIn 0.2s ease-out;">
+                            <div class="card-header">
+                                <h3>Notifications</h3>
+                                <span style="font-size:11px; color:var(--accent); font-weight:600; cursor:pointer">Mark
+                                    all as read</span>
+                            </div>
+                            <div class="card-body" style="max-height:380px; overflow-y:auto; padding:12px">
+                                <!-- Content injected via script.js -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="hdr-btn" id="profileBtn" title="Profile">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+                            <circle cx="12" cy="7" r="4" />
+                        </svg>
+                    </div>
+                    <!-- Profile Dropdown -->
+                    <div id="profileDropdown" class="card"
+                        style="display:none; position:absolute; top:45px; right:28px; width:200px; z-index:1000; box-shadow:var(--shadow-lg); animation: scaleIn 0.2s ease-out;">
+                        <div class="card-body" style="padding:12px">
+                            <button class="btn btn-ghost" id="logoutBtn"
+                                style="width:100%; justify-content:flex-start;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                    <path d="M16 17l4-5-4-5" />
+                                    <path d="M21 12H9" />
+                                </svg>
+                                Logout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- CONTENT -->
+            <div class="content">
+
+                <!-- ══════════ DASHBOARD VIEW ══════════ -->
+                <div id="dashboardView" class="view active">
+                    <div class="page-header animate-in" style="animation-delay:0.05s">
+                        <h2 id="dashGreeting">Good morning, Wency 👋</h2>
+                        <p id="dashSemesterSub">Here's your attendance overview — 2nd Semester, A.Y. 2025–2026</p>
+                    </div>
+
+                    <div class="stats-row">
+                        <div class="stat-card animate-in"
+                            style="--card-accent-bg:rgba(16,185,129,0.06);animation-delay:0.08s">
+                            <div class="stat-top">
+                                <div class="stat-icon" style="background:var(--green-pale)">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981"
+                                        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M20 6L9 17l-5-5" />
+                                    </svg>
+                                </div>
+                                <span class="stat-trend" style="background:#D1FAE5;color:#059669">↑ Good</span>
+                            </div>
+                            <div class="stat-label">Present</div>
+                            <div class="stat-value" id="dashPresent">—</div>
+                            <div class="stat-desc">sessions attended</div>
+                        </div>
+                        <div class="stat-card animate-in"
+                            style="--card-accent-bg:rgba(239,68,68,0.05);animation-delay:0.13s">
+                            <div class="stat-top">
+                                <div class="stat-icon" style="background:var(--red-pale)">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444"
+                                        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M18 6L6 18M6 6l12 12" />
+                                    </svg>
+                                </div>
+                                <span class="stat-trend" style="background:#FEE2E2;color:#DC2626"
+                                    id="absentTrend">—</span>
+                            </div>
+                            <div class="stat-label">Absent</div>
+                            <div class="stat-value" id="dashAbsent">—</div>
+                            <div class="stat-desc">sessions missed</div>
+                        </div>
+                        <div class="stat-card animate-in"
+                            style="--card-accent-bg:rgba(245,158,11,0.05);animation-delay:0.18s">
+                            <div class="stat-top">
+                                <div class="stat-icon" style="background:var(--amber-pale)">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B"
+                                        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="9" />
+                                        <path d="M12 8v4l2 2" />
+                                    </svg>
+                                </div>
+                                <span class="stat-trend" style="background:#FEF3C7;color:#D97706">⚠ Watch</span>
+                            </div>
+                            <div class="stat-label">Late</div>
+                            <div class="stat-value" id="dashLate">—</div>
+                            <div class="stat-desc">late arrivals</div>
+                        </div>
+                        <div class="stat-card animate-in"
+                            style="--card-accent-bg:rgba(67,97,238,0.05);animation-delay:0.23s">
+                            <div class="stat-top">
+                                <div class="stat-icon" style="background:var(--accent-bg)">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4361EE"
+                                        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                                    </svg>
+                                </div>
+                                <span class="stat-trend" style="background:var(--accent-bg);color:var(--accent)"
+                                    id="dashRateTrend">—%</span>
+                            </div>
+                            <div class="stat-label">Attendance Rate</div>
+                            <div class="stat-value" id="dashRate">—%</div>
+                            <div class="stat-desc">overall semester</div>
+                        </div>
+                    </div>
+
+                    <div class="dash-grid">
+                        <div style="display:flex;flex-direction:column;gap:14px">
+                            <!-- Today's Schedule -->
+                            <div class="card scale-in" style="animation-delay:0.12s">
+                                <div class="card-header">
+                                    <h3>Today's Schedule</h3>
+                                    <span style="font-size:12px;color:var(--ink5);font-family:var(--mono)"
+                                        id="todayScheduleDate">—</span>
+                                </div>
+                                <div style="overflow-x:auto">
+                                    <table class="schedule-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Subject</th>
+                                                <th>Time</th>
+                                                <th>Room</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>
+                                                    <div class="subject-cell">
+                                                        <div class="subject-dot" style="background:#6366F1"></div>
+                                                        Programming 1
+                                                    </div>
+                                                </td>
+                                                <td class="mono">8:00 – 9:00 AM</td>
+                                                <td class="mono">CL-201</td>
+                                                <td><span class="badge badge-completed"><svg viewBox="0 0 24 24"
+                                                            fill="none" stroke="currentColor" stroke-width="2.5"
+                                                            stroke-linecap="round" stroke-linejoin="round">
+                                                            <path d="M20 6L9 17l-5-5" />
+                                                        </svg>Done</span></td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <div class="subject-cell">
+                                                        <div class="subject-dot" style="background:#0EA5E9"></div>Data
+                                                        Structures
+                                                    </div>
+                                                </td>
+                                                <td class="mono">9:15 – 10:15 AM</td>
+                                                <td class="mono">CL-305</td>
+                                                <td><span class="badge badge-ongoing"><svg viewBox="0 0 24 24"
+                                                            fill="none" stroke="currentColor" stroke-width="2.5"
+                                                            stroke-linecap="round" stroke-linejoin="round">
+                                                            <circle cx="12" cy="12" r="9" />
+                                                            <path d="M12 8v4l2 2" />
+                                                        </svg>Ongoing</span></td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <div class="subject-cell">
+                                                        <div class="subject-dot" style="background:#10B981"></div>
+                                                        Algorithms
+                                                    </div>
+                                                </td>
+                                                <td class="mono">10:30 – 11:30 AM</td>
+                                                <td class="mono">CL-101</td>
+                                                <td><span class="badge badge-scheduled">Upcoming</span></td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <div class="subject-cell">
+                                                        <div class="subject-dot" style="background:#F59E0B"></div>
+                                                        Database Systems
+                                                    </div>
+                                                </td>
+                                                <td class="mono">12:30 – 1:30 PM</td>
+                                                <td class="mono">CL-404</td>
+                                                <td><span class="badge badge-scheduled">Upcoming</span></td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <div class="subject-cell">
+                                                        <div class="subject-dot" style="background:#EF4444"></div>
+                                                        Computer Networks
+                                                    </div>
+                                                </td>
+                                                <td class="mono">1:45 – 2:45 PM</td>
+                                                <td class="mono">CL-202</td>
+                                                <td><span class="badge badge-scheduled">Upcoming</span></td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <div class="subject-cell">
+                                                        <div class="subject-dot" style="background:#8B5CF6"></div>
+                                                        Software Engineering
+                                                    </div>
+                                                </td>
+                                                <td class="mono">3:00 – 4:00 PM</td>
+                                                <td class="mono">CL-301</td>
+                                                <td><span class="badge badge-scheduled">Upcoming</span></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display:flex;flex-direction:column;gap:14px">
+                            <!-- Notifications -->
+                            <div class="card scale-in" style="animation-delay:0.20s">
+                                <div class="card-header">
+                                    <h3>Notifications</h3>
+                                    <span
+                                        style="background:var(--red);color:white;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;font-family:var(--mono)">3</span>
+                                </div>
+                                <div class="card-body" style="padding-bottom:6px">
+                                    <div class="notif-item unread">
+                                        <div class="notif-icon" style="background:var(--accent-bg)"><svg width="15"
+                                                height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)"
+                                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                                                <polyline points="14 2 14 8 20 8" />
+                                            </svg></div>
+                                        <div>
+                                            <div class="notif-title">Assignment Due</div>
+                                            <div class="notif-text">Programming 1 — due tomorrow</div>
+                                            <div class="notif-time">2 hours ago</div>
+                                        </div>
+                                    </div>
+                                    <div class="notif-item unread">
+                                        <div class="notif-icon" style="background:var(--green-pale)"><svg width="15"
+                                                height="15" viewBox="0 0 24 24" fill="none" stroke="var(--green)"
+                                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
+                                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
+                                            </svg></div>
+                                        <div>
+                                            <div class="notif-title">Lecture Notes Posted</div>
+                                            <div class="notif-text">Algorithms — Ch. 7 Graphs</div>
+                                            <div class="notif-time">Yesterday</div>
+                                        </div>
+                                    </div>
+                                    <div class="notif-item">
+                                        <div class="notif-icon" style="background:var(--amber-pale)"><svg width="15"
+                                                height="15" viewBox="0 0 24 24" fill="none" stroke="var(--amber)"
+                                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polygon
+                                                    points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                            </svg></div>
+                                        <div>
+                                            <div class="notif-title">Midterm Grade Released</div>
+                                            <div class="notif-text">Data Structures — check portal</div>
+                                            <div class="notif-time">2 days ago</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ══════════ ATTENDANCE VIEW ══════════ -->
+                <div id="attendanceView" class="view">
+                    <div class="page-header">
+                        <h2>Semester Attendance History</h2>
+                        <p id="attendSemesterSub">Complete log for 2nd Semester, A.Y. 2025–2026 · Jan 6 – today</p>
+                    </div>
+
+                    <!-- Summary Chips -->
+                    <div class="summary-chips" id="summaryChips"></div>
+
+                    <!-- Subject Legend / Filter -->
+                    <div class="subject-legend" id="subjectLegend"></div>
+
+                    <!-- History Card -->
+                    <div class="card">
+                        <div class="filter-bar">
+                            <div class="filter-group">
+                                <span class="filter-label">Status</span>
+                                <button class="filter-btn active" data-filter="all">All</button>
+                                <button class="filter-btn" data-filter="present">Present</button>
+                                <button class="filter-btn" data-filter="absent">Absent</button>
+                                <button class="filter-btn" data-filter="late">Late</button>
+                                <button class="filter-btn" data-filter="excused">Excused</button>
+                            </div>
+                            <div class="filter-sep"></div>
+                            <div class="filter-group">
+                                <span class="filter-label">Month</span>
+                                <button class="filter-btn active" data-month="all">All</button>
+                                <button class="filter-btn" data-month="01">Jan</button>
+                                <button class="filter-btn" data-month="02">Feb</button>
+                                <button class="filter-btn" data-month="03">Mar</button>
+                            </div>
+                            <div class="ml-auto">
+                                <button class="export-btn" id="exportBtn">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                    Export CSV
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="historyTableWrap" style="overflow-x:auto">
+                            <!-- injected by JS -->
+                        </div>
+
+                        <div class="pagination" id="pagination"></div>
+                    </div>
+                </div>
+
+                <!-- ══════════ SCHEDULE VIEW ══════════ -->
+                <div id="scheduleView" class="view">
+                    <div class="page-header animate-in" style="animation-delay:0.05s">
+                        <h2>Weekly Schedule</h2>
+                    </div>
+
+                    <!-- Timetable Grid -->
+                    <div class="card animate-in" style="animation-delay:0.12s;">
+                        <div id="schedGrid">
+                            <!-- injected by JS -->
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- ══════════ SETTINGS VIEW ══════════ -->
+                <div id="settingsView" class="view">
+                    <div class="page-header">
+                        <h2>Settings</h2>
+                        <p>Manage your profile and preferences.</p>
+                    </div>
+                    <div class="settings-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Profile Information</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-row">
+                                    <div class="form-group"><label>First Name</label><input type="text"
+                                            id="setFirstName" value="Wency"></div>
+                                    <div class="form-group"><label>Middle Name</label><input type="text"
+                                            id="setMiddleName" value="B."></div>
+                                </div>
+                                <div class="form-group"><label>Last Name</label><input type="text" id="setLastName"
+                                        value="Babaan"></div>
+                                <div class="form-group"><label>Student ID</label><input type="text" id="setStudentId"
+                                        value="20230123" readonly style="background:var(--surface2);color:var(--ink5)">
+                                </div>
+                                <div class="form-group"><label>Email Address</label><input type="email" id="setEmail"
+                                        placeholder="wency@school.edu.ph"></div>
+                                <div class="form-row">
+                                    <div class="form-group"><label>Program</label><input type="text" id="setProgram"
+                                            value="BSCS-DS"></div>
+                                    <div class="form-group"><label>Section</label><input type="text" id="setSection"
+                                            value="3B"></div>
+                                </div>
+                                <div class="form-group"><label>Year Level</label>
+                                    <select>
+                                        <option>1st Year</option>
+                                        <option>2nd Year</option>
+                                        <option selected>3rd Year</option>
+                                        <option>4th Year</option>
+                                    </select>
+                                </div>
+                                <div style="display:flex; gap:10px; margin-top:10px">
+                                    <button class="btn btn-primary" id="saveProfileBtn"><svg viewBox="0 0 24 24"
+                                            fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 12-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                            <polyline points="17 21 17 13 7 13 7 21" />
+                                            <polyline points="7 3 7 8 15 8" />
+                                        </svg>Save Changes</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:14px">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h3>Notifications</h3>
+                                </div>
+                                <div class="card-body" style="padding-bottom:4px">
+                                    <div class="toggle-row">
+                                        <div class="toggle-info">
+                                            <div class="t-title">Assignment Reminders</div>
+                                            <div class="t-sub">Get notified before deadlines</div>
+                                        </div>
+                                        <label class="toggle"><input type="checkbox" checked>
+                                            <div class="toggle-track"></div>
+                                            <div class="toggle-thumb"></div>
+                                        </label>
+                                    </div>
+                                    <div class="toggle-row">
+                                        <div class="toggle-info">
+                                            <div class="t-title">Attendance Alerts</div>
+                                            <div class="t-sub">Alert when nearing absence limit</div>
+                                        </div>
+                                        <label class="toggle"><input type="checkbox" checked>
+                                            <div class="toggle-track"></div>
+                                            <div class="toggle-thumb"></div>
+                                        </label>
+                                    </div>
+                                    <div class="toggle-row">
+                                        <div class="toggle-info">
+                                            <div class="t-title">Grade Releases</div>
+                                            <div class="t-sub">Notify when grades are posted</div>
+                                        </div>
+                                        <label class="toggle"><input type="checkbox">
+                                            <div class="toggle-track"></div>
+                                            <div class="toggle-thumb"></div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header" id="passwordToggle" style="cursor:pointer;user-select:none">
+                                    <div style="display:flex;align-items:center;gap:10px">
+                                        <div
+                                            style="width:32px;height:32px;border-radius:8px;background:var(--accent-bg);display:grid;place-items:center;flex-shrink:0">
+                                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                                                stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"
+                                                stroke-linejoin="round">
+                                                <rect x="3" y="11" width="18" height="11" rx="2" />
+                                                <path d="M7 11V7a5 5 0 0110 0v4" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h3 style="margin:0">Password &amp; Security</h3>
+                                            <div style="font-size:11px;color:var(--ink5);margin-top:1px">Last changed:
+                                                <span id="lastChangedLabel" style="font-family:var(--mono)">Never</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <svg id="passChevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        style="transition:transform 0.2s;color:var(--ink5);flex-shrink:0">
+                                        <polyline points="6 9 12 15 18 9" />
+                                    </svg>
+                                </div>
+
+                                <div id="passwordCollapse" style="display:none">
+                                    <div class="card-body" style="padding-bottom:0">
+
+                                        <!-- Current Password -->
+                                        <div class="form-group">
+                                            <label>Current Password</label>
+                                            <div class="pass-input-wrap">
+                                                <input type="password" id="currentPassword"
+                                                    placeholder="Enter current password"
+                                                    autocomplete="current-password">
+                                                <button type="button" class="pass-eye" data-target="currentPassword"
+                                                    tabindex="-1">
+                                                    <svg class="eye-show" width="15" height="15" viewBox="0 0 24 24"
+                                                        fill="none" stroke="currentColor" stroke-width="2"
+                                                        stroke-linecap="round" stroke-linejoin="round">
+                                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                                        <circle cx="12" cy="12" r="3" />
+                                                    </svg>
+                                                    <svg class="eye-hide" width="15" height="15" viewBox="0 0 24 24"
+                                                        fill="none" stroke="currentColor" stroke-width="2"
+                                                        stroke-linecap="round" stroke-linejoin="round"
+                                                        style="display:none">
+                                                        <path
+                                                            d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+                                                        <path
+                                                            d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+                                                        <line x1="1" y1="1" x2="23" y2="23" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- New Password -->
+                                        <div class="form-group">
+                                            <label>New Password</label>
+                                            <div class="pass-input-wrap">
+                                                <input type="password" id="newPassword"
+                                                    placeholder="Create a strong password" autocomplete="new-password">
+                                                <button type="button" class="pass-eye" data-target="newPassword"
+                                                    tabindex="-1">
+                                                    <svg class="eye-show" width="15" height="15" viewBox="0 0 24 24"
+                                                        fill="none" stroke="currentColor" stroke-width="2"
+                                                        stroke-linecap="round" stroke-linejoin="round">
+                                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                                        <circle cx="12" cy="12" r="3" />
+                                                    </svg>
+                                                    <svg class="eye-hide" width="15" height="15" viewBox="0 0 24 24"
+                                                        fill="none" stroke="currentColor" stroke-width="2"
+                                                        stroke-linecap="round" stroke-linejoin="round"
+                                                        style="display:none">
+                                                        <path
+                                                            d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+                                                        <path
+                                                            d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+                                                        <line x1="1" y1="1" x2="23" y2="23" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <!-- Strength bar -->
+                                            <div class="strength-bar-wrap" id="strengthWrap" style="display:none">
+                                                <div class="strength-bar">
+                                                    <div class="strength-fill" id="strengthFill"></div>
+                                                </div>
+                                                <span class="strength-label" id="strengthLabel"></span>
+                                            </div>
+                                            <!-- Requirements checklist -->
+                                            <ul class="pass-reqs" id="passReqs">
+                                                <li id="req-len" class="req"><span class="req-dot"></span>At least 8
+                                                    characters</li>
+                                                <li id="req-upper" class="req"><span class="req-dot"></span>One
+                                                    uppercase letter (A–Z)</li>
+                                                <li id="req-lower" class="req"><span class="req-dot"></span>One
+                                                    lowercase letter (a–z)</li>
+                                                <li id="req-num" class="req"><span class="req-dot"></span>One number
+                                                    (0–9)</li>
+                                                <li id="req-sym" class="req"><span class="req-dot"></span>One special
+                                                    character (!@#$…)</li>
+                                            </ul>
+                                        </div>
+
+                                        <!-- Confirm Password -->
+                                        <div class="form-group">
+                                            <label>Confirm New Password</label>
+                                            <div class="pass-input-wrap">
+                                                <input type="password" id="confirmNewPassword"
+                                                    placeholder="Re-enter new password" autocomplete="new-password">
+                                                <button type="button" class="pass-eye" data-target="confirmNewPassword"
+                                                    tabindex="-1">
+                                                    <svg class="eye-show" width="15" height="15" viewBox="0 0 24 24"
+                                                        fill="none" stroke="currentColor" stroke-width="2"
+                                                        stroke-linecap="round" stroke-linejoin="round">
+                                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                                        <circle cx="12" cy="12" r="3" />
+                                                    </svg>
+                                                    <svg class="eye-hide" width="15" height="15" viewBox="0 0 24 24"
+                                                        fill="none" stroke="currentColor" stroke-width="2"
+                                                        stroke-linecap="round" stroke-linejoin="round"
+                                                        style="display:none">
+                                                        <path
+                                                            d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+                                                        <path
+                                                            d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+                                                        <line x1="1" y1="1" x2="23" y2="23" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            <div id="matchMsg"
+                                                style="display:none;font-size:11.5px;margin-top:5px;display:flex;align-items:center;gap:5px">
+                                            </div>
+                                        </div>
+
+                                    </div>
+
+                                    <!-- Security tips -->
+                                    <div class="security-tips">
+                                        <div class="tip-title">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                                stroke-linejoin="round">
+                                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                                            </svg>
+                                            Security Tips
+                                        </div>
+                                        <div class="tip-list">
+                                            <div class="tip-item">Never share your password with anyone, including
+                                                staff.</div>
+                                            <div class="tip-item">Use a unique password not used on other sites.</div>
+                                            <div class="tip-item">Change your password regularly every 3–6 months.</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="card-body" style="padding-top:0">
+                                        <button class="btn btn-primary" id="changePasswordBtn" style="width:100%">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <rect x="3" y="11" width="18" height="11" rx="2" />
+                                                <path d="M7 11V7a5 5 0 0110 0v4" />
+                                            </svg>
+                                            Update Password
+                                        </button>
+                                        <div id="passSuccessMsg"
+                                            style="display:none;margin-top:10px;padding:10px 14px;background:var(--green-pale);border:1px solid rgba(5,150,105,0.2);border-radius:var(--radius-sm);font-size:12.5px;color:var(--green);display:flex;align-items:center;gap:8px">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                                stroke-linejoin="round">
+                                                <path d="M20 6L9 17l-5-5" />
+                                            </svg>
+                                            Password updated successfully!
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script src="script.js"></script>
+</body>
+
+</html>
