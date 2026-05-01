@@ -1,3 +1,4 @@
+
   import express from 'express';
   import session from 'express-session';
   import path from 'path';
@@ -115,7 +116,7 @@
   });
 
   app.post('/register', requireSupabase, async (req, res) => {
-    const { email, password, confirm_password, lastname, firstname, student_number, user_type, course, section } = req.body;
+    const { email, password, confirm_password, lastname, firstname, student_number, user_type } = req.body;
 
     if (!email || !password || !confirm_password || !lastname || !firstname || !student_number || !user_type) {
       return res.render('register', {
@@ -133,41 +134,26 @@
 
     const fullName = `${lastname}, ${firstname}`;
 
-    try {
-      // Store pending registration instead of creating auth user immediately
-      const { data, error } = await supabase
-        .from('pending_registrations')
-        .insert({
-          email,
-          password, // Hash in production
-          fullname: fullName,
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name: fullName,
           role: user_type,
-          student_id: student_number,
-          course: course || null,
-          section: section || null,
-          status: 'pending',
-          created_at: new Date(),
-        })
-        .select();
+          student_number: student_number,
+        },
+      },
+    });
 
-      if (error) {
-        return res.render('register', {
-          error: 'Failed to submit registration.',
-          form: { email, lastname, firstname, student_number, user_type },
-        });
-      }
-
+    if (error) {
       return res.render('register', {
-        error: null,
-        message: 'Registration submitted! Please wait for admin approval.',
-        form: {},
-      });
-    } catch (err) {
-      return res.render('register', {
-        error: 'An error occurred.',
+        error: error.message,
         form: { email, lastname, firstname, student_number, user_type },
       });
     }
+
+    return res.redirect('/login');
   });
 // Add this route
   app.get('/admin', requireLogin, requireSupabase, async (req, res) => {
@@ -284,113 +270,33 @@ app.get('/api/admin/users', requireLogin, requireAdmin, requireSupabase, async (
   }
 });
 
-// Get attendance logs
-app.get('/api/admin/attendance-logs', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('attendance_logs')
-      .select('*')
-      .order('date', { ascending: false });
+  // ── API endpoints ─────────────────────────────────────────────────────────────
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
+  app.post('/api/add-class', requireLogin, requireSupabase, async (req, res) => {
+    if (req.session.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    res.json(data || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const { class_name, subject, section, schedule, password, qr_data } = req.body;
 
-// Get pending registrations
-app.get('/api/admin/registrations', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('pending_registrations')
-      .select('*')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('classes')
+        .insert({
+          class_name,
+          subject,
+          section,
+          schedule,
+          password,
+          qr_data,
+          teacher_id: req.session.user.id,
+        })
+        .select();
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
+      if (error) throw error;
 
-    res.json(data || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Accept a registration
-app.post('/api/admin/accept-registration/:registrationId', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
-  try {
-    const { registrationId } = req.params;
-
-    // Get the pending registration
-    const { data: registration, error: fetchError } = await supabase
-      .from('pending_registrations')
-      .select('*')
-      .eq('id', registrationId)
-      .single();
-
-    if (fetchError || !registration) {
-      return res.status(404).json({ error: 'Registration not found' });
-    }
-
-    // Create auth user
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: registration.email,
-      password: registration.password,
-      user_metadata: {
-        name: registration.fullname,
-        role: registration.role,
-        student_id: registration.student_id,
-        course: registration.course,
-        section: registration.section,
-      },
-      email_confirm: true, // Auto-confirm email
-    });
-
-    if (authError) {
-      return res.status(400).json({ error: authError.message });
-    }
-
-    // Mark registration as approved
-    const { error: updateError } = await supabase
-      .from('pending_registrations')
-      .update({ status: 'approved' })
-      .eq('id', registrationId);
-
-    if (updateError) {
-      console.error('Failed to update registration status:', updateError);
-    }
-
-    res.json({ success: true, message: 'Registration approved! User can now login.' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Decline a registration
-app.post('/api/admin/decline-registration/:registrationId', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
-  try {
-    const { registrationId } = req.params;
-
-    const { error } = await supabase
-      .from('pending_registrations')
-      .update({ status: 'declined' })
-      .eq('id', registrationId);
-
-    if (error) {
-      return res.status(400).json({ error: error.message });
-    }
-
-    res.json({ success: true, message: 'Registration declined.' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+      res.json({ success: true, class: data[0], class_id: data[0].id });
+    } catch (error) {
       res.status(500).json({ error: error.message });
     }
   });
