@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Console • AttendTrack</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#f5f7fd;
+    --surface:#ffffff;
+    --surface2:#f4f7ff;
+    --surface3:#eef4ff;
+    --border:rgba(99,102,241,0.14);
+    --text:#111827;
+    --text2:#4b5563;
+    --text3:#6b7280;
+    --accent:#6366f1;
+    --accent2:#818cf8;
+    --accent-bg:#eef2ff;
+    --green:#10b981;
+    --green-bg:#ecfdf5;
+    --red:#ef4444;
+    --red-bg:#fef2f2;
+    --amber:#f59e0b;
+    --amber-bg:#fffbeb;
+    --card-shadow: 0 24px 70px rgba(99,102,241,0.08);
+    --sidebar-w:220px;
+    --header-h:56px;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: radial-gradient(circle at top left, rgba(99,102,241,0.12), transparent 26%),
+                radial-gradient(circle at bottom right, rgba(16,185,129,0.08), transparent 24%),
+                var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ─── Layout ─── */
+  #app {
+    display: flex;
+    width: 100%;
+    min-height: 100vh;
+    position: relative;
+  }
+
+  /* ─── Sidebar ─── */
+  .sidebar {
+    width: var(--sidebar-w);
+    background: linear-gradient(180deg, var(--surface), var(--surface2));
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    overflow-y: auto;
+    box-shadow: inset -1px 0 0 rgba(255,255,255,0.06);
+  }
+  .sb-logo {
+    padding: 20px 18px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sb-logo-icon {
+    width: 32px;
+    height: 32px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .sb-logo-icon svg {
+    width: 16px;
+    height: 16px;
+    stroke: #fff;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .sb-logo-text { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .sb-logo-sub { font-size: 11px; color: var(--text3); }
+  .sb-section {
+    padding: 16px 12px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--text3);
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    margin: 1px 8px;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+    color: var(--text2);
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    background: none;
+    width: calc(100% - 16px);
+    text-align: left;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: var(--accent-bg); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(99,102,241,0.12); }
+  .nav-item svg { width: 15px; height: 15px; flex-shrink: 0; opacity: .8; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .nav-item.active svg { opacity: 1; }
+  .sb-bottom {
+    margin-top: auto;
+    padding: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ─── Main ─── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+  .header {
+    height: var(--header-h);
+    background: linear-gradient(180deg, var(--surface), var(--surface2));
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 12px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header-title { font-size: 15px; font-weight: 700; color: var(--text); flex: 1; }
+  .header-actions { display: flex; align-items: center; gap: 10px; }
+  .content { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* ─── Chips / Badges ─── */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .chip-present { background: var(--green-bg); color: var(--green); }
+  .chip-absent  { background: var(--red-bg);   color: var(--red);   }
+  .chip-late    { background: var(--amber-bg);  color: var(--amber); }
+  .chip-pending { background: var(--amber-bg);  color: var(--amber); }
+  .chip-section { background: var(--accent-bg); color: var(--accent); }
+  .chip-teacher { background: var(--green-bg);  color: var(--green); }
+
+  /* ─── Cards ─── */
+  .card {
+    background: linear-gradient(180deg, var(--surface), var(--surface2));
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    box-shadow: var(--card-shadow);
+  }
+  .card-head {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(99,102,241,0.05);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .card-head h3 { font-size: 13px; font-weight: 700; color: var(--text); }
+  .card-body { padding: 16px; }
+
+  /* ─── Metric cards ─── */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .metric {
+    background: linear-gradient(180deg, var(--surface), var(--surface2));
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    border-left-width: 3px;
+    border-left-color: var(--accent);
+    min-height: 118px;
+  }
+  .metric-label { font-size: 11px; color: var(--text2); margin-bottom: 6px; }
+  .metric-val   { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1; }
+
+  /* ─── Stat mini ─── */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat-mini {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+  .stat-mini-val { font-size: 24px; font-weight: 700; line-height: 1; }
+  .stat-mini-lbl { font-size: 11px; color: var(--text2); margin-top: 4px; }
+
+  /* ─── Tables ─── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    padding: 9px 14px;
+    text-align: left;
+    color: var(--text3);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    white-space: nowrap;
+  }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface2); }
+  .mono { font-family: 'SF Mono', 'Fira Mono', monospace; font-size: 12px; color: var(--text2); }
+
+  /* ─── Avatar ─── */
+  .avatar {
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+    letter-spacing: .03em;
+  }
+  .name-cell { display: flex; align-items: center; gap: 10px; }
+
+  /* ─── Buttons ─── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: background .15s, opacity .15s;
+    white-space: nowrap;
+    line-height: 1;
+  }
+  .btn:hover { background: rgba(99,102,241,0.08); }
+  .btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { opacity: .88; background: var(--accent); }
+  .btn-danger  { background: var(--red-bg); color: var(--red); border-color: transparent; }
+  .btn-danger:hover { opacity: .8; }
+  .btn-success { background: var(--green-bg); color: var(--green); border-color: transparent; }
+  .btn-success:hover { opacity: .8; }
+  .btn-xs { padding: 5px 11px; font-size: 11px; border-radius: 6px; }
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  /* ─── Views ─── */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ─── 2-col grid ─── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+
+  /* ─── Progress bars ─── */
+  .prog-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 12px; }
+  .prog-row:last-child { margin-bottom: 0; }
+  .prog-label { width: 55px; color: var(--text2); font-weight: 500; }
+  .prog-bar { flex: 1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+  .prog-val { width: 58px; text-align: right; font-weight: 700; font-size: 12px; }
+
+  /* ─── Search / form inputs ─── */
+  .search-bar {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    width: 100%;
+    transition: border-color .15s;
+  }
+  .search-bar:focus { border-color: var(--accent); }
+  .form-input {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    background: var(--surface2);
+    color: var(--text);
+    outline: none;
+    width: 100%;
+    transition: border-color .15s;
+  }
+  .form-input:focus { border-color: var(--accent); background: var(--surface); }
+  select.form-input { cursor: pointer; }
+
+  /* ─── Filter row ─── */
+  .filter-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 16px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 11px;
+    color: var(--text2);
+    margin-bottom: 5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  /* ─── Registration item ─── */
+  .reg-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface2);
+    margin-bottom: 8px;
+    transition: opacity .3s;
+  }
+  .reg-item:last-child { margin-bottom: 0; }
+  .reg-info { flex: 1; min-width: 0; }
+  .reg-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .reg-sub  { font-size: 11px; color: var(--text2); margin-top: 3px; }
+
+  /* ─── Schedule / teacher accordion ─── */
+  .teacher-block { margin-bottom: 8px; }
+  .teacher-hdr {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: var(--surface2);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .15s;
+    user-select: none;
+  }
+  .teacher-hdr:hover { background: var(--border); }
+  .teacher-expand { margin-left: auto; color: var(--text3); font-size: 12px; transition: transform .2s; }
+  .teacher-expand.open { transform: rotate(180deg); }
+  .teacher-sched {
+    padding: 10px 0 4px 14px;
+    border-left: 2px solid var(--border);
+    margin-left: 18px;
+    margin-top: 6px;
+  }
+  .sched-item {
+    display: grid;
+    grid-template-columns: 56px 1fr 90px;
+    gap: 8px;
+    align-items: center;
+    padding: 9px 10px;
+    background: var(--surface2);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    border-left: 3px solid transparent;
+  }
+  .sched-item:last-child { margin-bottom: 0; }
+  .sched-time { font-size: 12px; font-weight: 700; font-family: monospace; }
+  .sched-class { font-size: 12px; font-weight: 600; color: var(--text); }
+  .sched-room  { font-size: 11px; color: var(--text2); }
+
+  /* ─── Subject mini cards ─── */
+  .subject-card {
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    border-left-width: 3px;
+  }
+  .subject-card-name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .subject-card-sub  { font-size: 11px; color: var(--text2); margin: 3px 0 6px; }
+  .subject-card-count{ font-size: 18px; font-weight: 700; }
+
+  /* ─── Page header ─── */
+  .page-title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .page-sub   { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+
+  /* ─── Modal overlay ─── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 1000;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    width: 100%;
+    max-width: 460px;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: modalIn .18s ease;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(10px) scale(.97); }
+    to   { opacity: 1; transform: none; }
+  }
+  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 18px; color: var(--text); }
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: var(--text3);
+    line-height: 1;
+    padding: 0;
+  }
+  .modal-close:hover { color: var(--text); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .form-row-single { margin-bottom: 12px; }
+
+  /* ─── Link style ─── */
+  .link-name {
+    color: var(--accent);
+    cursor: pointer;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .link-name:hover { text-decoration: underline; }
+
+  /* ─── Toast ─── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--text);
+    color: var(--bg);
+    padding: 11px 18px;
+    border-radius: 99px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all .2s;
+    pointer-events: none;
+    z-index: 9999;
+    white-space: nowrap;
+    box-shadow: 0 4px 20px rgba(0,0,0,.2);
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ─── Divider ─── */
+  .divider { width: 1px; height: 16px; background: var(--border); }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 768px) {
+    .sidebar { position: fixed; left: -100%; z-index: 200; transition: left .25s; }
+    .sidebar.open { left: 0; }
+    .metrics { grid-template-columns: repeat(2, 1fr); }
+    .grid2   { grid-template-columns: 1fr; }
+    .grid3   { grid-template-columns: repeat(2, 1fr); }
+    .filter-row { grid-template-columns: 1fr 1fr; }
+    .content { padding: 16px; }
+    .menu-btn { display: flex; }
+  }
+  @media (min-width: 769px) {
+    .menu-btn { display: none; }
+  }
+
+  /* ─── Menu btn ─── */
+  .menu-btn {
+    width: 34px;
+    height: 34px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .menu-btn svg { width: 16px; height: 16px; stroke: var(--text); fill: none; stroke-width: 2; stroke-linecap: round; }
+</style>
+</head>
+<body>
+
+<div id="app">
+<div id="toast" class="toast"></div>
+
+<!-- ═══════════════════════════════════════════
+     SIDEBAR
+═══════════════════════════════════════════ -->
+<nav class="sidebar" id="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <div>
+      <div class="sb-logo-text">AttendTrack</div>
+      <div class="sb-logo-sub">Admin Console</div>
+    </div>
+  </div>
+
+  <div class="sb-section">Overview</div>
+  <button class="nav-item active" onclick="switchView('dashboard', this)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+    Dashboard
+  </button>
+
+  <div class="sb-section">People</div>
+  <button class="nav-item" onclick="switchView('students', this)">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Students
+  </button>
+  <button class="nav-item" onclick="switchView('teachers', this)">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Teachers
+  </button>
+  <button class="nav-item" onclick="switchView('users', this)">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+    All Users
+  </button>
+
+  <div class="sb-section">Management</div>
+  <button class="nav-item" onclick="switchView('registrations', this)">
+    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 2l-4 4m0 0l-4-4m4 4V14"/></svg>
+    Registrations
+    <span class="chip chip-pending" id="sbPendingBadge" style="margin-left:auto;padding:2px 7px;font-size:10px">5</span>
+  </button>
+  <button class="nav-item" onclick="switchView('logs', this)">
+    <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="12" y2="16"/></svg>
+    Attendance Logs
+  </button>
+
+  <!-- Sidebar footer -->
+  <div class="sb-bottom">
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="avatar" style="background:var(--accent);font-size:10px;width:30px;height:30px;font-size:10px">AD</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Administrator</div>
+        <div style="font-size:10px;color:var(--text3)">Super Admin</div>
+      </div>
+      <button class="btn btn-xs" onclick="toast('Logged out!')" style="font-size:10px;padding:4px 8px">Out</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════
+     MAIN AREA
+═══════════════════════════════════════════ -->
+<div class="main">
+
+  <!-- Header -->
+  <div class="header">
+    <!-- Mobile menu button -->
+    <button class="menu-btn" onclick="toggleSidebar()">
+      <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="header-title" id="headerTitle">Dashboard</div>
+    <div class="header-actions">
+      <span style="font-size:11px;color:var(--text3)" id="headerDate"></span>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content" id="contentArea">
+
+    <!-- ═══════ DASHBOARD ═══════ -->
+    <div class="view active" id="view-dashboard">
+      <div class="page-title" id="dashGreeting">Good day, Admin 👋</div>
+      <div class="page-sub">Here's what's happening today.</div>
+
+      <!-- Metrics -->
+      <div class="metrics">
+        <div class="metric" style="border-left-color:var(--accent)">
+          <div class="metric-label">Total Students</div>
+          <div class="metric-val" id="mStudents">6</div>
+        </div>
+        <div class="metric" style="border-left-color:var(--green)">
+          <div class="metric-label">Present Today</div>
+          <div class="metric-val" style="color:var(--green)">4</div>
+        </div>
+        <div class="metric" style="border-left-color:var(--amber)">
+          <div class="metric-label">Total Teachers</div>
+          <div class="metric-val" id="mTeachers">2</div>
+        </div>
+        <div class="metric" style="border-left-color:var(--text3)">
+          <div class="metric-label">Active Classes</div>
+          <div class="metric-val">8</div>
+        </div>
+      </div>
+
+      <!-- 2-col: attendance + registration -->
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head"><h3>Today's Attendance</h3></div>
+          <div class="card-body">
+            <div class="prog-row">
+              <span class="prog-label">Present</span>
+              <div class="prog-bar"><div class="prog-fill" style="width:67%;background:var(--green)"></div></div>
+              <span class="prog-val" style="color:var(--green)">67% (4)</span>
+            </div>
+            <div class="prog-row">
+              <span class="prog-label">Absent</span>
+              <div class="prog-bar"><div class="prog-fill" style="width:17%;background:var(--red)"></div></div>
+              <span class="prog-val" style="color:var(--red)">17% (1)</span>
+            </div>
+            <div class="prog-row">
+              <span class="prog-label">Late</span>
+              <div class="prog-bar"><div class="prog-fill" style="width:16%;background:var(--amber)"></div></div>
+              <span class="prog-val" style="color:var(--amber)">16% (1)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Registration Status</h3></div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div style="padding:12px;background:var(--surface2);border-radius:8px;text-align:center">
+                <div style="font-size:22px;font-weight:700;color:var(--amber)" id="dPending">5</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:3px">Pending</div>
+              </div>
+              <div style="padding:12px;background:var(--surface2);border-radius:8px;text-align:center">
+                <div style="font-size:22px;font-weight:700;color:var(--green)">2</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:3px">Approved Today</div>
+              </div>
+              <div style="padding:12px;background:var(--surface2);border-radius:8px;text-align:center">
+                <div style="font-size:22px;font-weight:700;color:var(--accent)">3</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:3px">Students</div>
+              </div>
+              <div style="padding:12px;background:var(--surface2);border-radius:8px;text-align:center">
+                <div style="font-size:22px;font-weight:700;color:var(--accent2)">2</div>
+                <div style="font-size:11px;color:var(--text2);margin-top:3px">Teachers</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Classes for today -->
+      <div class="card">
+        <div class="card-head"><h3>Today's Classes</h3></div>
+        <div class="card-body" style="padding:12px">
+
+          <div class="teacher-block">
+            <div class="teacher-hdr" onclick="toggleSched('t1')">
+              <div class="avatar" style="background:var(--accent);width:36px;height:36px;font-size:11px">JR</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:700;color:var(--text)">Mr. James Reyes</div>
+                <div style="font-size:11px;color:var(--text2)">Python Programming · 3 classes</div>
+              </div>
+              <span class="teacher-expand open" id="ico-t1">▾</span>
+            </div>
+            <div class="teacher-sched" id="sched-t1" style="display:block">
+              <div class="sched-item" style="border-left-color:var(--green)">
+                <span class="sched-time" style="color:var(--green)">07:30</span>
+                <div><div class="sched-class">Python — Section A</div><div class="sched-room">Room 101</div></div>
+                <span class="chip chip-present">Done</span>
+              </div>
+              <div class="sched-item" style="border-left-color:var(--accent)">
+                <span class="sched-time" style="color:var(--accent)">09:00</span>
+                <div><div class="sched-class">Python — Section B</div><div class="sched-room">Room 102</div></div>
+                <span class="chip chip-section">Active</span>
+              </div>
+              <div class="sched-item" style="border-left-color:var(--text3)">
+                <span class="sched-time" style="color:var(--text3)">10:30</span>
+                <div><div class="sched-class">Python — Section C</div><div class="sched-room">Room 103</div></div>
+                <span class="chip" style="background:var(--surface2);color:var(--text2)">Upcoming</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="teacher-block">
+            <div class="teacher-hdr" onclick="toggleSched('t2')">
+              <div class="avatar" style="background:#e91e8c;width:36px;height:36px;font-size:11px">AC</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:700;color:var(--text)">Ms. Anna Cruz</div>
+                <div style="font-size:11px;color:var(--text2)">Java Programming · 2 classes</div>
+              </div>
+              <span class="teacher-expand" id="ico-t2">▾</span>
+            </div>
+            <div class="teacher-sched" id="sched-t2" style="display:none">
+              <div class="sched-item" style="border-left-color:var(--green)">
+                <span class="sched-time" style="color:var(--green)">08:00</span>
+                <div><div class="sched-class">Java — Section A</div><div class="sched-room">Room 201</div></div>
+                <span class="chip chip-present">Done</span>
+              </div>
+              <div class="sched-item" style="border-left-color:var(--text3)">
+                <span class="sched-time" style="color:var(--text3)">11:00</span>
+                <div><div class="sched-class">Java — Section B</div><div class="sched-room">Room 202</div></div>
+                <span class="chip" style="background:var(--surface2);color:var(--text2)">Upcoming</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Quick actions -->
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head"><h3>Quick Actions</h3></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-primary" onclick="openAddModal()">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add New User
+            </button>
+            <button class="btn" onclick="toast('Generating report…')">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Generate Report
+            </button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>System Tools</h3></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-primary" onclick="toast('Syncing data…')">
+              <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Sync Data
+            </button>
+            <button class="btn" onclick="toast('Backup started…')">
+              <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Backup System
+            </button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /dashboard -->
+
+
+    <!-- ═══════ STUDENTS ═══════ -->
+    <div class="view" id="view-students">
+      <div class="page-title">Students</div>
+      <div class="page-sub">Monitor enrollment, performance, and attendance patterns.</div>
+
+      <!-- Subject cards -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+        <div class="subject-card" style="border-left-color:var(--accent)">
+          <div class="subject-card-name">Python Programming</div>
+          <div class="subject-card-sub">Sections A, B, C</div>
+          <div class="subject-card-count" style="color:var(--accent)">180 students</div>
+        </div>
+        <div class="subject-card" style="border-left-color:var(--red)">
+          <div class="subject-card-name">Java Programming</div>
+          <div class="subject-card-sub">Sections A, B, C</div>
+          <div class="subject-card-count" style="color:var(--red)">165 students</div>
+        </div>
+        <div class="subject-card" style="border-left-color:var(--green)">
+          <div class="subject-card-name">C++ Programming</div>
+          <div class="subject-card-sub">Sections A, B, C</div>
+          <div class="subject-card-count" style="color:var(--green)">150 students</div>
+        </div>
+        <div class="subject-card" style="border-left-color:var(--amber)">
+          <div class="subject-card-name">JavaScript</div>
+          <div class="subject-card-sub">Sections A, B, C</div>
+          <div class="subject-card-count" style="color:var(--amber)">195 students</div>
+        </div>
+        <div class="subject-card" style="border-left-color:#a855f7">
+          <div class="subject-card-name">PHP Programming</div>
+          <div class="subject-card-sub">Sections A, B, C</div>
+          <div class="subject-card-count" style="color:#a855f7">140 students</div>
+        </div>
+        <div class="subject-card" style="border-left-color:#06b6d4">
+          <div class="subject-card-name">Ruby Programming</div>
+          <div class="subject-card-sub">Sections A, B, C</div>
+          <div class="subject-card-count" style="color:#06b6d4">130 students</div>
+        </div>
+      </div>
+
+      <!-- Student table -->
+      <div class="card">
+        <div class="card-head">
+          <h3>Registered Students</h3>
+          <div class="btn-group">
+            <button class="btn btn-xs btn-primary" onclick="openAddModal('student')">+ Add Student</button>
+            <button class="btn btn-xs" onclick="toast('Exporting list…')">↓ Export</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding-bottom:4px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input class="search-bar" id="stuSearch" placeholder="Search by name or ID…" style="max-width:320px" oninput="filterTable('studentsTbody', this.value)">
+            <select class="form-input" style="width:auto" onchange="filterTable('studentsTbody', document.getElementById('stuSearch').value, this.value)">
+              <option value="">All Sections</option>
+              <option>Section A</option>
+              <option>Section B</option>
+              <option>Section C</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Student ID</th>
+                <th>Course</th>
+                <th>Section</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="studentsTbody">
+              <!-- Populated by loadStudents() from Supabase -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /students -->
+
+
+    <!-- ═══════ TEACHERS ═══════ -->
+    <div class="view" id="view-teachers">
+      <div class="page-title">Teachers</div>
+      <div class="page-sub">View, manage, and organize teacher profiles and assigned classes.</div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Registered Teachers</h3>
+          <div class="btn-group">
+            <button class="btn btn-xs btn-primary" onclick="openAddModal('teacher')">+ Add Teacher</button>
+            <button class="btn btn-xs" onclick="toast('Exporting list…')">↓ Export</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding-bottom:4px">
+          <input class="search-bar" placeholder="Search by name or employee ID…" style="max-width:320px" oninput="filterTable('teachersTbody', this.value)">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Employee ID</th>
+                <th>Subject</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="teachersTbody">
+              <!-- Populated by loadTeachers() from Supabase -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /teachers -->
+
+
+    <!-- ═══════ ALL USERS ═══════ -->
+    <div class="view" id="view-users">
+      <div class="page-title">All Users</div>
+      <div class="page-sub">Click a name to view profile details.</div>
+
+      <div class="grid3" style="margin-bottom:16px">
+        <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:var(--text)" id="uTotal">8</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">Total Users</div>
+        </div>
+        <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:var(--accent)" id="uStudents">6</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">Students</div>
+        </div>
+        <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:var(--green)" id="uTeachers">2</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">Teachers</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>User Directory</h3></div>
+        <div class="card-body" style="padding-bottom:4px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input class="search-bar" placeholder="Search by name, email, or ID…" style="flex:1;min-width:200px" oninput="filterTable('usersTbody', this.value)">
+            <select class="form-input" style="width:140px" onchange="filterTable('usersTbody', '', this.value)">
+              <option value="">All Roles</option>
+              <option value="student">Students</option>
+              <option value="teacher">Teachers</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Course / Subject</th>
+                <th>Section</th>
+                <th>Email</th>
+              </tr>
+            </thead>
+            <tbody id="usersTbody">
+              <!-- Populated by loadAllUsers() from Supabase -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /users -->
+
+
+    <!-- ═══════ REGISTRATIONS ═══════ -->
+    <div class="view" id="view-registrations">
+      <div class="page-title">Registrations</div>
+      <div class="page-sub">Review and approve pending registration requests.</div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Pending Registrations</h3>
+          <span class="chip chip-pending" id="pendingChip">5 pending</span>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+            <button class="btn btn-xs active-filter" id="rbAll" onclick="filterReg('all')">All</button>
+            <button class="btn btn-xs" id="rbStu" onclick="filterReg('student')">Students</button>
+            <button class="btn btn-xs" id="rbTea" onclick="filterReg('teacher')">Teachers</button>
+            <button class="btn btn-xs btn-success" style="margin-left:auto" onclick="bulkApprove()">✓ Approve All</button>
+            <button class="btn btn-xs btn-danger" onclick="bulkDecline()">✕ Decline All</button>
+          </div>
+
+          <div id="regList">
+            <!-- Populated by loadPendingRegistrations() from Supabase -->
+          </div>
+        </div>
+      </div>
+    </div><!-- /registrations -->
+
+
+    <!-- ═══════ ATTENDANCE LOGS ═══════ -->
+    <div class="view" id="view-logs">
+      <div class="page-title">Attendance Logs</div>
+      <div class="page-sub">Filter, review, and export attendance records.</div>
+
+      <div class="stat-row">
+        <div class="stat-mini">
+          <div class="stat-mini-val" style="color:var(--green)">4</div>
+          <div class="stat-mini-lbl">Present</div>
+        </div>
+        <div class="stat-mini">
+          <div class="stat-mini-val" style="color:var(--red)">1</div>
+          <div class="stat-mini-lbl">Absent</div>
+        </div>
+        <div class="stat-mini">
+          <div class="stat-mini-val" style="color:var(--amber)">1</div>
+          <div class="stat-mini-lbl">Late</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Records</h3>
+          <div class="btn-group">
+            <button class="btn btn-xs btn-primary" onclick="exportLogs()">↓ Export CSV</button>
+            <button class="btn btn-xs btn-danger" onclick="clearLogs()">Clear All</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="filter-row">
+            <div class="form-group">
+              <label>Student</label>
+              <input class="form-input" id="fStudent" placeholder="Name…">
+            </div>
+            <div class="form-group">
+              <label>Subject</label>
+              <select class="form-input" id="fSubject">
+                <option value="">All Subjects</option>
+                <option>Python Programming</option>
+                <option>Java Programming</option>
+                <option>C++ Programming</option>
+                <option>JavaScript</option>
+                <option>PHP Programming</option>
+                <option>Ruby Programming</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select class="form-input" id="fStatus">
+                <option value="">All Statuses</option>
+                <option>Present</option>
+                <option>Absent</option>
+                <option>Late</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <button class="btn btn-primary" style="width:100%" onclick="applyLogFilter()">Filter</button>
+            </div>
+          </div>
+          <div id="filterMsg" style="font-size:12px;color:var(--text3);margin-bottom:8px"></div>
+        </div>
+        <div class="table-wrap">
+          <table id="logsTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Student</th>
+                <th>Time</th>
+                <th>Subject</th>
+                <th>Period</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="logsTbody">
+              <!-- Populated by loadAttendanceLogs() from Supabase -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /logs -->
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+
+<!-- ═══════════════════════════════════════════
+     MODALS
+═══════════════════════════════════════════ -->
+
+<!-- User Profile Modal -->
+<div class="modal-overlay" id="profileModal">
+  <div class="modal" style="max-width:380px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 id="profileTitle">User Profile</h3>
+      <button class="modal-close" onclick="closeModal('profileModal')">&times;</button>
+    </div>
+    <div id="profileAvatar" style="display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border)">
+      <!-- populated by JS -->
+    </div>
+    <div id="profileBody" style="font-size:13px;line-height:1.8;color:var(--text2)">
+      <!-- populated by JS -->
+    </div>
+    <button class="btn" style="width:100%;margin-top:18px;justify-content:center" onclick="closeModal('profileModal')">Close</button>
+  </div>
+</div>
+
+<!-- Add User Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <h3>Add New User</h3>
+      <button class="modal-close" onclick="closeModal('addModal')">&times;</button>
+    </div>
+
+    <div class="form-row-single">
+      <div class="form-group">
+        <label>Role</label>
+        <select class="form-input" id="newRole" onchange="onRoleChange()">
+          <option value="student">Student</option>
+          <option value="teacher">Teacher</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input class="form-input" id="newName" placeholder="e.g. John Doe">
+      </div>
+      <div class="form-group">
+        <label id="newIdLabel">Student ID</label>
+        <input class="form-input" id="newId" placeholder="e.g. STU-007">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Email</label>
+        <input class="form-input" id="newEmail" type="email" placeholder="user@school.edu">
+      </div>
+      <div class="form-group">
+        <label id="newCourseLabel">Course</label>
+        <input class="form-input" id="newCourse" placeholder="e.g. Python Programming">
+      </div>
+    </div>
+
+    <div id="studentOnlyFields">
+      <div class="form-row-single">
+        <div class="form-group">
+          <label>Section</label>
+          <select class="form-input" id="newSection">
+            <option>Section A</option>
+            <option>Section B</option>
+            <option>Section C</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="teacherOnlyFields" style="display:none">
+      <div class="form-row-single">
+        <div class="form-group">
+          <label>Faculty / Office</label>
+          <input class="form-input" id="newOffice" placeholder="e.g. CS Faculty">
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="submitUser()">Create User</button>
+      <button class="btn" onclick="closeModal('addModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /#app -->
+
+
+<script src="/static/admin.js"></script>
+
+</body>
+</html>

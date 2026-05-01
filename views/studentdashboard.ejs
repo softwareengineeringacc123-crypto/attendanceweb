@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AttendTrack · Student Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/dashboardstyle.css">
+<style>
+/* ── PROFILE INFO (read-only) ── */
+.profile-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.profile-field{padding:13px 18px;border-bottom:1px solid var(--border);border-right:1px solid var(--border)}
+.profile-field:nth-child(even){border-right:none}
+.profile-field.full-width{grid-column:1/-1;border-right:none}
+.profile-field:last-child{border-bottom:none}
+.profile-field-label{font-size:10.5px;font-weight:700;color:var(--ink5);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px}
+.profile-field-value{font-size:14px;font-weight:500;color:var(--ink2);letter-spacing:-0.01em}
+.profile-field-value.mono{font-family:var(--mono);font-size:13px}
+.profile-field-value-input{font-size:14px;font-weight:500;color:var(--ink2);letter-spacing:-0.01em;border:1px solid transparent;background:transparent;width:100%;padding:4px 6px;margin-left:-6px;border-radius:4px;outline:none;font-family:var(--font);transition:all 0.2s}
+.profile-field-value-input.mono{font-family:var(--mono);font-size:13px}
+.profile-field-value-input.editable{border:1px solid var(--border2);background:var(--surface);color:var(--ink)}
+.profile-field-value-input.editable:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(67,97,238,0.1)}
+.profile-avatar-row{display:flex;align-items:center;gap:16px;padding:20px 18px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.profile-avatar-big{width:58px;height:58px;border-radius:14px;background:linear-gradient(135deg,var(--accent),#6B8AFF);display:grid;place-items:center;font-weight:800;font-size:20px;color:white;flex-shrink:0;box-shadow:0 6px 16px rgba(67,97,238,0.3);letter-spacing:-0.02em}
+.profile-avatar-name{font-size:17px;font-weight:700;color:var(--ink);letter-spacing:-0.02em}
+.profile-avatar-sub{font-size:12px;color:var(--ink5);margin-top:3px}
+.profile-readonly-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;background:var(--surface2);border:1px solid var(--border2);font-size:11px;font-weight:600;color:var(--ink5)}
+
+/* ── ENHANCED DASHBOARD ── */
+.dash-grid-v2{display:grid;grid-template-columns:1fr 298px;gap:16px;align-items:start}
+.dash-left{display:flex;flex-direction:column;gap:16px}
+.dash-right{display:flex;flex-direction:column;gap:16px}
+
+/* today list */
+.today-list{display:flex;flex-direction:column}
+.today-item{display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--border);transition:background 0.15s}
+.today-item:last-child{border-bottom:none}
+.today-item:hover{background:var(--surface2)}
+.today-color-bar{width:3px;height:36px;border-radius:999px;flex-shrink:0}
+.today-info{flex:1;min-width:0}
+.today-subj{font-size:13px;font-weight:600;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.today-meta{font-size:11px;color:var(--ink5);margin-top:1px;font-family:var(--mono)}
+.today-badge{flex-shrink:0}
+
+/* subject bars */
+.subject-bars{display:flex;flex-direction:column;gap:11px;padding:2px 0}
+.subj-bar-row{display:flex;align-items:center;gap:10px}
+.subj-bar-name{font-size:12px;font-weight:600;color:var(--ink3);width:126px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.subj-bar-track{flex:1;height:8px;background:var(--border);border-radius:999px;overflow:hidden}
+.subj-bar-fill{height:100%;border-radius:999px;transition:width 0.9s cubic-bezier(0.22,1,0.36,1)}
+.subj-bar-pct{font-size:11.5px;font-weight:700;font-family:var(--mono);width:38px;text-align:right;flex-shrink:0}
+
+/* donut */
+.rate-donut-wrap{display:flex;flex-direction:column;align-items:center;padding:14px 0 6px}
+.rate-donut-svg{width:112px;height:112px}
+.rate-donut-center{text-align:center;margin-top:-70px;margin-bottom:54px;position:relative;z-index:1}
+.rate-donut-pct{font-size:26px;font-weight:800;color:var(--ink);letter-spacing:-0.04em;line-height:1}
+.rate-donut-label{font-size:11px;color:var(--ink5);margin-top:2px}
+
+/* legend */
+.status-legend{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 14px;justify-content:center}
+.status-pill{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--ink4)}
+.status-pill-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* quick stats */
+.mini-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mini-stat{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px}
+.mini-stat-label{font-size:10.5px;font-weight:600;color:var(--ink5);text-transform:uppercase;letter-spacing:0.06em}
+.mini-stat-value{font-size:21px;font-weight:800;color:var(--ink);letter-spacing:-0.04em;line-height:1;margin-top:5px}
+.mini-stat-sub{font-size:10.5px;color:var(--ink6);margin-top:2px}
+
+.shadow-lg{box-shadow:0 8px 32px rgba(15,23,42,0.14),0 2px 8px rgba(15,23,42,0.08)}
+
+@keyframes pulse-soft {
+  0% { transform: scale(1); box-shadow: 0 2px 8px rgba(67,97,238,0.2); }
+  50% { transform: scale(1.03); box-shadow: 0 4px 12px rgba(67,97,238,0.35); }
+  100% { transform: scale(1); box-shadow: 0 2px 8px rgba(67,97,238,0.2); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </div>
+        <div>
+          <div class="brand-name">AttendTrack</div>
+          <div class="brand-sub">Student Portal</div>
+        </div>
+      </div>
+      <div class="student-card">
+        <div class="student-avatar" id="sidebarAvatar">—</div>
+        <!-- First + Last name only in sidebar -->
+        <div class="student-name" id="sidebarName">Loading...</div>
+        <div class="student-meta" id="sidebarMeta">—</div>
+        <div class="student-id"># <span id="sidebarId">—</span></div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Main</div>
+      <a class="nav-item active" data-target="dashboardView">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard<span class="nav-active-dot"></span>
+      </a>
+      <a class="nav-item" data-target="attendanceView">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Attendance<span class="nav-badge" id="sidebarAbsentBadge">0</span>
+      </a>
+      <a class="nav-item" data-target="scheduleView">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Schedule
+      </a>
+      <a class="nav-item" data-target="mySubjectView">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        My Subjects
+      </a>
+      <div class="nav-section-label" style="margin-top:8px">Account</div>
+      <a class="nav-item" data-target="settingsView">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </a>
+    </nav>
+  </aside>
+
+  <!-- MINI SIDEBAR -->
+  <div class="overlay" id="overlay"></div>
+  <div class="mini-sidebar" id="miniSidebar">
+    <div class="mini-brand">Attend<span>Track</span></div>
+    <div class="mini-student">
+      <div class="m-avatar" id="miniAvatar">—</div>
+      <div class="m-name" id="miniName">Loading...</div>
+      <div class="m-meta" id="miniMeta">—</div>
+    </div>
+    <div class="mini-nav">
+      <a class="active" data-target="dashboardView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </a>
+      <a data-target="attendanceView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Attendance
+      </a>
+      <a data-target="scheduleView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Schedule
+      </a>
+      <a data-target="mySubjectView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        My Subjects
+      </a>
+      <a data-target="settingsView">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        Settings
+      </a>
+    </div>
+  </div>
+
+  <div class="main">
+    <header>
+      <div class="header-left">
+        <div class="hamburger" id="hamburger"><span></span><span></span><span></span></div>
+        <div>
+          <div class="page-title" id="pageTitle">Dashboard</div>
+          <div class="page-sub" id="pageSub">Overview · Today</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="time-pill"><div class="time-dot"></div><span id="liveTime">—</span></div>
+        <div style="position:relative">
+          <div class="hdr-btn" id="notifBtn" title="Notifications">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+            <div class="notif-dot"></div>
+          </div>
+          <div id="notifDropdown" class="card shadow-lg" style="display:none;position:absolute;top:45px;right:0;width:320px;z-index:1000;">
+            <div class="card-header">
+              <h3>Notifications</h3>
+              <span style="font-size:11px;color:var(--accent);font-weight:600;cursor:pointer">Mark all read</span>
+            </div>
+            <div class="card-body" style="max-height:380px;overflow-y:auto;padding:12px"></div>
+          </div>
+        </div>
+        <div style="position:relative">
+          <div class="hdr-btn" id="profileBtn" title="Account">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <div id="profileDropdown" class="card shadow-lg"
+     style="display:none;position:absolute;top:45px;right:0;width:210px;z-index:1000;">
+  <div class="card-body" style="padding:10px">
+    <button class="btn btn-ghost" id="logoutBtn" style="width:100%;justify-content:flex-start;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+        <path d="M16 17l4-5-4-5"/><path d="M21 12H9"/>
+      </svg>
+      Logout
+    </button>
+  </div>
+</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ══════════ DASHBOARD ══════════ -->
+      <div id="dashboardView" class="view active">
+        <div class="page-header animate-in" style="animation-delay:0.05s">
+          <h2 id="dashGreeting">Loading... 👋</h2>
+          <p id="dashSemesterSub">Here's your attendance overview</p>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-card animate-in" style="--card-accent-bg:rgba(16,185,129,0.06);animation-delay:0.08s">
+            <div class="stat-top"><div class="stat-icon" style="background:var(--green-pale)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div><span class="stat-trend" style="background:#D1FAE5;color:#059669">↑ Good</span></div>
+            <div class="stat-label">Present</div><div class="stat-value" id="dashPresent">—</div><div class="stat-desc">sessions attended</div>
+          </div>
+          <div class="stat-card animate-in" style="--card-accent-bg:rgba(239,68,68,0.05);animation-delay:0.13s">
+            <div class="stat-top"><div class="stat-icon" style="background:var(--red-pale)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></div><span class="stat-trend" style="background:#FEE2E2;color:#DC2626" id="absentTrend">—</span></div>
+            <div class="stat-label">Absent</div><div class="stat-value" id="dashAbsent">—</div><div class="stat-desc">sessions missed</div>
+          </div>
+          <div class="stat-card animate-in" style="--card-accent-bg:rgba(245,158,11,0.05);animation-delay:0.18s">
+            <div class="stat-top"><div class="stat-icon" style="background:var(--amber-pale)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg></div><span class="stat-trend" style="background:#FEF3C7;color:#D97706">⚠ Watch</span></div>
+            <div class="stat-label">Late</div><div class="stat-value" id="dashLate">—</div><div class="stat-desc">late arrivals</div>
+          </div>
+          <div class="stat-card animate-in" style="--card-accent-bg:rgba(67,97,238,0.05);animation-delay:0.23s">
+            <div class="stat-top"><div class="stat-icon" style="background:var(--accent-bg)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4361EE" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><span class="stat-trend" style="background:var(--accent-bg);color:var(--accent)" id="dashRateTrend">—%</span></div>
+            <div class="stat-label">Attendance Rate</div><div class="stat-value" id="dashRate">—%</div><div class="stat-desc">overall semester</div>
+          </div>
+        </div>
+
+        <div class="dash-grid-v2">
+          <div class="dash-left">
+            <!-- Today's Classes -->
+            <div class="card scale-in" style="animation-delay:0.10s">
+              <div class="card-header">
+                <h3>Today's Classes</h3>
+                <button class="btn btn-primary" id="enrollBtn" style="font-size:12px;padding:6px 12px">
+                  <svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Enroll
+                </button>
+              </div>
+              <div class="today-list" id="todayClassList"></div>
+            </div>
+            <!-- Per-Subject Attendance Bars -->
+            <div class="card scale-in" style="animation-delay:0.15s">
+              <div class="card-header">
+                <h3>Attendance by Subject</h3>
+                <span style="font-size:11px;color:var(--ink5)">Semester overview</span>
+              </div>
+              <div class="card-body"><div class="subject-bars" id="subjectBars"></div></div>
+            </div>
+          </div>
+          <div class="dash-right">
+            <!-- Donut Chart -->
+            <div class="card scale-in" style="animation-delay:0.12s">
+              <div class="card-header"><h3>Overall Rate</h3></div>
+              <div class="rate-donut-wrap">
+                <svg class="rate-donut-svg" viewBox="0 0 110 110">
+                  <circle cx="55" cy="55" r="44" fill="none" stroke="var(--border)" stroke-width="10"/>
+                  <circle id="donutPresent" cx="55" cy="55" r="44" fill="none" stroke="#10B981" stroke-width="10"
+                    stroke-linecap="round" stroke-dasharray="276.5" stroke-dashoffset="276.5"
+                    transform="rotate(-90 55 55)" style="transition:stroke-dashoffset 1.2s cubic-bezier(0.22,1,0.36,1)"/>
+                </svg>
+                <div class="rate-donut-center">
+                  <div class="rate-donut-pct" id="donutPct">—%</div>
+                  <div class="rate-donut-label">present rate</div>
+                </div>
+              </div>
+              <div class="status-legend">
+                <div class="status-pill"><div class="status-pill-dot" style="background:#10B981"></div><span id="legendPresent">— Present</span></div>
+                <div class="status-pill"><div class="status-pill-dot" style="background:#EF4444"></div><span id="legendAbsent">— Absent</span></div>
+                <div class="status-pill"><div class="status-pill-dot" style="background:#F59E0B"></div><span id="legendLate">— Late</span></div>
+                <div class="status-pill"><div class="status-pill-dot" style="background:#8B5CF6"></div><span id="legendExcused">— Excused</span></div>
+              </div>
+            </div>
+            <!-- Quick Stats -->
+            <div class="card scale-in" style="animation-delay:0.18s">
+              <div class="card-header"><h3>Quick Stats</h3></div>
+              <div class="card-body">
+                <div class="mini-stats">
+                  <div class="mini-stat"><div class="mini-stat-label">Total Sessions</div><div class="mini-stat-value" id="statTotal">—</div><div class="mini-stat-sub">this semester</div></div>
+                  <div class="mini-stat"><div class="mini-stat-label">Excused</div><div class="mini-stat-value" id="statExcused" style="color:#8B5CF6">—</div><div class="mini-stat-sub">absences</div></div>
+              <div class="mini-stat"><div class="mini-stat-label">Subjects</div><div class="mini-stat-value" id="statSubjects" style="color:var(--accent)">6</div><div class="mini-stat-sub">enrolled</div></div>
+                  <div class="mini-stat"><div class="mini-stat-label">Risk Level</div><div class="mini-stat-value" id="statRisk" style="font-size:13px;margin-top:7px">—</div><div class="mini-stat-sub">attendance</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════ ATTENDANCE ══════════ -->
+      <div id="attendanceView" class="view">
+        <div class="page-header">
+          <h2>Semester Attendance History</h2>
+          <p id="attendSemesterSub">Complete log for 2nd Semester, A.Y. 2025–2026</p>
+        </div>
+        <div class="summary-chips" id="summaryChips"></div>
+        <div class="subject-legend" id="subjectLegend"></div>
+        <div class="card">
+          <div class="filter-bar">
+            <div class="filter-group">
+              <span class="filter-label">Status</span>
+              <button class="filter-btn active" data-filter="all">All</button>
+              <button class="filter-btn" data-filter="present">Present</button>
+              <button class="filter-btn" data-filter="absent">Absent</button>
+              <button class="filter-btn" data-filter="late">Late</button>
+              <button class="filter-btn" data-filter="excused">Excused</button>
+            </div>
+            <div class="filter-sep"></div>
+            <div class="filter-group">
+              <span class="filter-label">Month</span>
+              <button class="filter-btn active" data-month="all">All</button>
+              <button class="filter-btn" data-month="01">Jan</button>
+              <button class="filter-btn" data-month="02">Feb</button>
+              <button class="filter-btn" data-month="03">Mar</button>
+              <button class="filter-btn" data-month="04">Apr</button>
+            </div>
+            <div class="ml-auto">
+              <button class="export-btn" id="exportBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export CSV
+              </button>
+            </div>
+          </div>
+          <div id="historyTableWrap" style="overflow-x:auto"></div>
+          <div class="pagination" id="pagination"></div>
+        </div>
+      </div>
+
+      <!-- ══════════ SCHEDULE ══════════ -->
+      <div id="scheduleView" class="view">
+        <div class="page-header animate-in" style="animation-delay:0.05s"><h2>Weekly Schedule</h2></div>
+        <div class="card animate-in" style="animation-delay:0.10s"><div id="schedGrid"></div></div>
+        <div class="card animate-in" style="animation-delay:0.16s;margin-top:14px">
+          <div class="card-header"><h3>Subject Details</h3></div>
+          <div style="overflow-x:auto">
+            <table class="schedule-table">
+              <thead><tr><th>Subject</th><th>Days</th><th>Time</th><th>Room</th><th>Teacher</th></tr></thead>
+              <tbody id="schedSubjectBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+      <!-- ══════════ MY SUBJECTS ══════════ -->
+      <div id="mySubjectView" class="view">
+        <div class="page-header">
+          <h2>Enrolled Subjects</h2>
+          <p>Manage your current class enrollments</p>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>My Current Subjects</h3>
+            <button class="btn btn-primary" onclick="openEnrollmentModal()" style="font-size:12px;padding:6px 12px">
+              <svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Add New Subject
+            </button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="att-table">
+              <thead><tr><th>Subject</th><th>Class</th><th>Teacher</th><th>Schedule</th><th>Room</th><th>Actions</th></tr></thead>
+              <tbody id="mySubjectsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      
+
+      <!-- ══════════ SETTINGS ══════════ -->
+      <div id="settingsView" class="view">
+        <div class="page-header">
+          <h2>Settings</h2>
+          <p>View your profile and manage your account preferences.</p>
+        </div>
+        <div class="settings-grid">
+
+          <!-- Profile — Read Only -->
+          <div class="card">
+            <div class="card-header">
+              <h3>Profile Information</h3>
+              <button class="btn btn-ghost" id="editProfileBtn" style="font-size:11.5px;padding:5px 12px;height:auto">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                Edit Profile
+              </button>
+            </div>
+            <!-- Avatar + Full name (with middle name) -->
+            <div class="profile-avatar-row">
+              <div class="profile-avatar-big" id="profileAvatarBig">—</div>
+              <div>
+                <div class="profile-avatar-name" id="profileFullName">—</div>
+                <div class="profile-avatar-sub" id="profileSubLine">—</div>
+              </div>
+            </div>
+            <!-- Read-only fields -->
+            <div class="profile-info-grid">
+              <div class="profile-field">
+                <div class="profile-field-label">First Name</div>
+                <input type="text" class="profile-field-value-input" id="pFirstName" value="—" readonly>
+              </div>
+              <div class="profile-field">
+                <div class="profile-field-label">Middle Name</div>
+                <input type="text" class="profile-field-value-input" id="pMiddleName" value="—" readonly>
+              </div>
+              <div class="profile-field">
+                <div class="profile-field-label">Last Name</div>
+                <input type="text" class="profile-field-value-input" id="pLastName" value="—" readonly>
+              </div>
+              <div class="profile-field">
+                <div class="profile-field-label">Student ID</div>
+                <input type="text" class="profile-field-value-input mono" id="pStudentId" value="—" readonly>
+              </div>
+              <div class="profile-field">
+                <div class="profile-field-label">Program</div>
+                <input type="text" class="profile-field-value-input" id="pProgram" value="—" readonly>
+              </div>
+              <div class="profile-field">
+                <div class="profile-field-label">Section</div>
+                <input type="text" class="profile-field-value-input" id="pSection" value="—" readonly>
+              </div>
+              <div class="profile-field full-width">
+                <div class="profile-field-label">Email Address</div>
+                <input type="text" class="profile-field-value-input mono" id="pEmail" value="—" readonly>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right column -->
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <!-- Notifications toggles -->
+            <div class="card">
+              <div class="card-header"><h3>Notifications</h3></div>
+              <div class="card-body" style="padding-bottom:4px">
+                <div class="toggle-row"><div class="toggle-info"><div class="t-title">Assignment Reminders</div><div class="t-sub">Get notified before deadlines</div></div><label class="toggle"><input type="checkbox" checked><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+                <div class="toggle-row"><div class="toggle-info"><div class="t-title">Attendance Alerts</div><div class="t-sub">Alert when nearing absence limit</div></div><label class="toggle"><input type="checkbox" checked><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+                <div class="toggle-row"><div class="toggle-info"><div class="t-title">Grade Releases</div><div class="t-sub">Notify when grades are posted</div></div><label class="toggle"><input type="checkbox"><div class="toggle-track"></div><div class="toggle-thumb"></div></label></div>
+              </div>
+            </div>
+            <!-- Password & Security -->
+            <div class="card">
+              <div class="card-header" id="passwordToggle" style="cursor:pointer;user-select:none">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:32px;height:32px;border-radius:8px;background:var(--accent-bg);display:grid;place-items:center;flex-shrink:0">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                  </div>
+                  <div>
+                    <h3 style="margin:0">Password &amp; Security</h3>
+                    <div style="font-size:11px;color:var(--ink5);margin-top:1px">Last changed: <span id="lastChangedLabel" style="font-family:var(--mono)">Never</span></div>
+                  </div>
+                </div>
+                <svg id="passChevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;color:var(--ink5);flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+              <div id="passwordCollapse" style="display:none">
+                <div class="card-body" style="padding-bottom:0">
+                  <div class="form-group">
+                    <label>Current Password</label>
+                    <div class="pass-input-wrap">
+                      <input type="password" id="currentPassword" placeholder="Enter current password" autocomplete="current-password">
+                      <button type="button" class="pass-eye" data-target="currentPassword" tabindex="-1">
+                        <svg class="eye-show" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <svg class="eye-hide" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label>New Password</label>
+                    <div class="pass-input-wrap">
+                      <input type="password" id="newPassword" placeholder="Create a strong password" autocomplete="new-password">
+                      <button type="button" class="pass-eye" data-target="newPassword" tabindex="-1">
+                        <svg class="eye-show" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <svg class="eye-hide" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      </button>
+                    </div>
+                    <div class="strength-bar-wrap" id="strengthWrap" style="display:none">
+                      <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
+                      <span class="strength-label" id="strengthLabel"></span>
+                    </div>
+                    <ul class="pass-reqs">
+                      <li id="req-len"   class="req"><span class="req-dot"></span>At least 8 characters</li>
+                      <li id="req-upper" class="req"><span class="req-dot"></span>One uppercase letter (A–Z)</li>
+                      <li id="req-lower" class="req"><span class="req-dot"></span>One lowercase letter (a–z)</li>
+                      <li id="req-num"   class="req"><span class="req-dot"></span>One number (0–9)</li>
+                      <li id="req-sym"   class="req"><span class="req-dot"></span>One special character (!@#$…)</li>
+                    </ul>
+                  </div>
+                  <div class="form-group">
+                    <label>Confirm New Password</label>
+                    <div class="pass-input-wrap">
+                      <input type="password" id="confirmNewPassword" placeholder="Re-enter new password" autocomplete="new-password">
+                      <button type="button" class="pass-eye" data-target="confirmNewPassword" tabindex="-1">
+                        <svg class="eye-show" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <svg class="eye-hide" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      </button>
+                    </div>
+                    <div id="matchMsg" style="display:none;font-size:11.5px;margin-top:5px;align-items:center;gap:5px"></div>
+                  </div>
+                </div>
+                <div class="security-tips">
+                  <div class="tip-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Security Tips</div>
+                  <div class="tip-list">
+                    <div class="tip-item">Never share your password with anyone, including staff.</div>
+                    <div class="tip-item">Use a unique password not used on other sites.</div>
+                    <div class="tip-item">Change your password regularly every 3–6 months.</div>
+                  </div>
+                </div>
+                <div class="card-body" style="padding-top:0">
+                  <button class="btn btn-primary" id="changePasswordBtn" style="width:100%">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    Update Password
+                  </button>
+                  <div id="passSuccessMsg" style="display:none;margin-top:10px;padding:10px 14px;background:var(--green-pale);border:1px solid rgba(5,150,105,0.2);border-radius:var(--radius-sm);font-size:12.5px;color:var(--green);align-items:center;gap:8px">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                    Password updated successfully!
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ENROLLMENT MODAL ── -->
+  <div id="enrollmentModalBackdrop" class="modal-backdrop" 
+       style="display:none;position:fixed;inset:0;background:rgba(67,97,238,0.15);backdrop-filter:blur(4px);z-index:1200;align-items:center;justify-content:center;padding:20px">
+    <div class="card" style="max-width:600px;width:100%;padding:32px;position:relative;border-left:4px solid #4361ee;max-height:85vh;overflow-y:auto">
+      <button type="button" onclick="closeEnrollmentModal()"
+              style="position:absolute;top:18px;right:18px;border:none;background:none;color:var(--ink5);font-size:24px;cursor:pointer">×</button>
+      
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+        <div style="width:44px;height:44px;border-radius:12px;background:#dbeafe;display:grid;place-items:center;flex-shrink:0;font-size:24px">🎓</div>
+        <div>
+          <h3 style="margin:0;font-size:18px;color:var(--ink2)">Enroll in Class</h3>
+          <div style="font-size:12px;color:var(--ink5);margin-top:2px">Search and select subjects to add to your schedule</div>
+        </div>
+      </div>
+
+      <!-- Search Section -->
+      <div style="margin-bottom:24px">
+        <div style="margin-bottom:12px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--ink4);margin-bottom:6px">
+            Enrollment Code or Class Name
+          </label>
+          <div style="display:flex;gap:8px">
+            <input id="enrollmentCode" type="text" placeholder="e.g., 1234-56 or CS101" 
+                   style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;outline:none;box-sizing:border-box"/>
+            <button id="searchBtn" type="button" onclick="searchClasses()"
+                    style="padding:10px 20px;border:none;background:#4361ee;color:white;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">
+              Search
+            </button>
+          </div>
+          <div style="font-size:11px;color:var(--ink5);margin-top:6px">
+            Enter the enrollment code from your teacher or search by class name
+          </div>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      <div id="enrollmentResults" style="display:none;margin-bottom:24px">
+        <div style="font-size:12px;font-weight:600;color:var(--ink4);margin-bottom:12px;text-transform:uppercase">
+          Available Classes & Subjects
+        </div>
+        <div id="resultsContainer" style="display:flex;flex-direction:column;gap:12px"></div>
+      </div>
+
+      <!-- No Results -->
+      <div id="noResults" style="display:none;text-align:center;padding:32px;background:var(--surface2);border-radius:10px;margin-bottom:24px">
+        <div style="font-size:40px;margin-bottom:12px">🔍</div>
+        <div style="font-size:14px;font-weight:600;color:var(--ink3);margin-bottom:4px">No classes found</div>
+        <div style="font-size:12px;color:var(--ink5)">Try searching with a different code or class name</div>
+      </div>
+
+      <!-- Selected Subjects -->
+      <div id="selectedSubjectsSection" style="display:none;margin-bottom:24px;padding:16px;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:10px">
+        <div style="font-size:12px;font-weight:600;color:#1e40af;margin-bottom:12px">
+          ✓ Selected Subjects (<span id="selectedCount">0</span>)
+        </div>
+        <div id="selectedSubjectsList" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:10px">
+        <button class="btn btn-ghost" type="button" onclick="closeEnrollmentModal()">Cancel</button>
+        <button class="btn btn-primary" id="confirmEnrollBtn" type="button" 
+                style="background:#4361ee;border:none;display:none"
+                onclick="confirmEnrollment()">
+          Confirm Enrollment
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- ── PASSCODE MODAL ── -->
+<div id="passcodeModal"
+     style="display:none;position:fixed;inset:0;background:rgba(67,97,238,0.18);backdrop-filter:blur(4px);z-index:1300;align-items:center;justify-content:center;padding:20px"
+     onclick="if(event.target===this)closePasscodeModal()">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(15,23,42,0.18);animation:modalIn 0.18s ease">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:42px;height:42px;border-radius:12px;background:var(--accent-bg);display:grid;place-items:center;flex-shrink:0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        </div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--ink);letter-spacing:-0.02em">Submit Attendance</div>
+          <div id="pcModal_title" style="font-size:12px;color:var(--ink5);margin-top:2px">Subject Name</div>
+        </div>
+      </div>
+      <button onclick="closePasscodeModal()" style="border:none;background:none;font-size:22px;color:var(--ink5);cursor:pointer;padding:0;line-height:1;flex-shrink:0">&times;</button>
+    </div>
+
+    <!-- Passcode input -->
+    <div style="margin-bottom:16px">
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--ink5);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">
+        Class Passcode
+      </label>
+      <input id="pcModal_input" type="text" placeholder="Enter passcode from your teacher" maxlength="20"
+             onkeydown="if(event.key==='Enter')submitPasscodeModal()"
+             style="width:100%;padding:11px 14px;border:1.5px solid var(--border2);border-radius:10px;font-size:14px;font-family:var(--mono);letter-spacing:0.1em;outline:none;box-sizing:border-box;transition:border-color 0.15s"
+             onfocus="this.style.borderColor='#4361EE'" onblur="this.style.borderColor=''"/>
+      <div style="font-size:11px;color:var(--ink5);margin-top:6px">
+        Leave blank if no passcode is required for this class.
+      </div>
+    </div>
+
+    <!-- Feedback message -->
+    <div id="pcModal_msg" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:8px;background:var(--surface2);"></div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:10px">
+      <button onclick="closePasscodeModal()"
+              style="flex:1;padding:11px;border:1px solid var(--border);background:var(--surface);color:var(--ink3);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer">
+        Cancel
+      </button>
+      <button id="pcModal_btn" onclick="submitPasscodeModal()"
+              style="flex:2;padding:11px;border:none;background:#4361EE;color:white;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity 0.15s">
+        Submit Attendance
+      </button>
+    </div>
+  </div>
+</div>
+<script src="/static/script.js"></script>
+</body>
+</html>
