@@ -1,5 +1,3 @@
-  console.log('SERVER FILE LOADED - version 2');
-
   import express from 'express';
   import session from 'express-session';
   import path from 'path';
