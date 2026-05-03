@@ -5,6 +5,7 @@
 var SUBJECTS = [];
 var NOTIFICATIONS_DATA = [];
 var USER_PROFILE = {};
+window.HAS_ENROLLMENTS = false;
 
 // ── DATABASE FETCH FUNCTIONS ──────────────────────────
 async function fetchSubjects() {
@@ -15,6 +16,7 @@ async function fetchSubjects() {
     const response = await fetch(endpoint);
     if (!response.ok) throw new Error('Failed to fetch subjects');
     const data = await response.json();
+    window.HAS_ENROLLMENTS = (data.subjects && data.subjects.length > 0) || (data.pending && data.pending.length > 0);
     return data.subjects || [];
   } catch (error) {
     console.error('Error fetching subjects:', error);
@@ -85,7 +87,14 @@ async function fetchAttendanceRecords() {
     const response = await fetch('/api/user-attendance');
     if (!response.ok) throw new Error('Failed to fetch attendance');
     const data = await response.json();
-    return data.attendance || [];
+    return (data.attendance || []).map(function(r) {
+      r.subjId = r.subject_id || r.subjId;
+      if (!r.subjName) {
+        var s = window.SUBJECTS ? window.SUBJECTS.find(function(x) { return Number(x.id) === Number(r.subjId); }) : null;
+        r.subjName = s ? s.name : 'Unknown Subject';
+      }
+      return r;
+    });
   } catch (error) {
     console.error('Error fetching attendance records:', error);
     return [];
@@ -265,6 +274,20 @@ function renderTodayClasses() {
   var classes = Object.values(classMap);
   if (todaySchedEl) todaySchedEl.textContent = TODAY_LABEL + ' · ' + classes.length + ' class' + (classes.length !== 1 ? 'es' : '');
 
+  // I-sort ang mga klase at subjects: Ongoing (1st), Upcoming (2nd), Done (3rd)
+  classes.forEach(function(cls) {
+    var statuses = cls.subjects.map(function(s) { return getClassStatus(s); });
+    cls.status = statuses.includes('ongoing') ? 'ongoing' : (statuses.includes('upcoming') ? 'upcoming' : 'done');
+    cls.subjects.sort(function(a, b) {
+      var rank = { 'ongoing': 1, 'upcoming': 2, 'done': 3 };
+      return rank[getClassStatus(a)] - rank[getClassStatus(b)];
+    });
+  });
+  classes.sort(function(a, b) {
+    var rank = { 'ongoing': 1, 'upcoming': 2, 'done': 3 };
+    return rank[a.status] - rank[b.status];
+  });
+
   container.innerHTML = classes.map(function(cls, ci) {
     var dropId = 'classSubjDrop_' + ci;
 
@@ -309,8 +332,7 @@ function renderTodayClasses() {
   '</div>';
 }).join('');
 
-    var statuses    = cls.subjects.map(function(s) { return getClassStatus(s); });
-    var classStatus = statuses.includes('ongoing') ? 'ongoing' : statuses.includes('upcoming') ? 'upcoming' : 'done';
+    var classStatus = cls.status;
     var classChip   = classStatus === 'ongoing'
       ? '<span style="font-size:10px;font-weight:700;color:#10B981;background:rgba(16,185,129,0.1);padding:2px 8px;border-radius:999px">Ongoing</span>'
       : classStatus === 'upcoming'
@@ -318,10 +340,7 @@ function renderTodayClasses() {
       : '<span style="font-size:10px;font-weight:700;color:var(--ink5);background:var(--surface2);padding:2px 8px;border-radius:999px;border:1px solid var(--border)">Done</span>';
 
     return '' +
-      '<div style="display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s" ' +
-           'onclick="toggleClassDrop(\'' + dropId + '\', this)" ' +
-           'onmouseenter="this.style.background=\'var(--surface2)\'" ' +
-           'onmouseleave="this.style.background=\'\'">' +
+      '<div style="display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--border);">' +
         '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#4361EE22,#4361EE11);border:1px solid #4361EE33;display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
           '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4361EE" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' +
         '</div>' +
@@ -331,10 +350,9 @@ function renderTodayClasses() {
         '</div>' +
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">' +
           classChip +
-          '<svg class="class-drop-chevron" style="width:14px;height:14px;color:var(--ink5);transition:transform 0.2s;transform:rotate(0deg)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>' +
         '</div>' +
       '</div>' +
-      '<div id="' + dropId + '" style="display:none">' + subjectRows + '</div>';
+      '<div id="' + dropId + '" style="display:block">' + subjectRows + '</div>';
   }).join('');
 }
 
@@ -670,6 +688,11 @@ function showView(id) {
   var pt=document.getElementById('pageTitle'), ps=document.getElementById('pageSub');
   if(pt) pt.textContent=VIEW_META[id]?VIEW_META[id].title:'';
   if(ps) ps.textContent=VIEW_META[id]?VIEW_META[id].sub:'';
+
+  // Ibalik ang "Enroll" button kapag nasa Dashboard, itago sa ibang views
+  var enrollBtn = document.getElementById('enrollBtn');
+  if(enrollBtn) enrollBtn.style.display = (id === 'dashboardView' && !window.HAS_ENROLLMENTS) ? '' : 'none';
+
   if(id==='dashboardView')  renderDashboard();
   if(id==='attendanceView'){ renderSummaryChips(); renderSubjectLegend(); renderTable(); }
   if(id==='scheduleView')   renderScheduleGrid();
@@ -680,8 +703,25 @@ function renderMySubjects() {
   var tbody = document.getElementById('mySubjectsTableBody');
   if (!tbody) return;
 
+  // Awtomatikong itago ang "Actions" column header kung nasa HTML pa ito
+  var theadTr = tbody.closest('table') ? tbody.closest('table').querySelector('thead tr') : null;
+  if (theadTr && theadTr.children.length >= 6) {
+    theadTr.children[5].style.display = 'none';
+  }
+
+  // Hanapin at itago ang anumang button na may text na "Add" o "Enroll" sa loob ng My Subjects view
+  var mySubjectView = document.getElementById('mySubjectView');
+  if (mySubjectView) {
+    var btns = mySubjectView.querySelectorAll('button');
+    btns.forEach(function(btn) {
+      if (btn.textContent.toLowerCase().includes('add') || btn.textContent.toLowerCase().includes('enroll')) {
+        btn.style.display = 'none';
+      }
+    });
+  }
+
   if (SUBJECTS.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--ink5)">You are not enrolled in any subjects yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--ink5)">You are not enrolled in any subjects yet.</td></tr>';
     return;
   }
 
@@ -694,16 +734,6 @@ function renderMySubjects() {
       '<td>' + escapeHTML(s.teacher || 'TBA') + '</td>' +
       '<td><span class="mono">' + (s.days || []).join(', ') + '<br>' + (s.time || '') + '</span></td>' +
       '<td><span class="mono">' + escapeHTML(s.room || 'TBA') + '</span></td>' +
-      '<td style="display:flex;gap:6px">' +
-        '<button class="btn btn-ghost" onclick="openPasscodeModal(\'' + s.classId + '\', ' + s.id + ', \'' + safeNameJs + '\')" ' +
-                'style="color:var(--accent);border-color:rgba(67,97,238,0.2);padding:4px 10px;font-size:11px">' +
-          'Enter Code' +
-        '</button>' +
-        '<button class="btn btn-ghost" onclick="dropSubject(\'' + s.classId + '\', ' + s.id + ', \'' + safeNameJs + '\', this)" ' +
-                'style="color:var(--red);border-color:rgba(220,38,38,0.2);padding:4px 10px;font-size:11px">' +
-          'Drop' +
-        '</button>' +
-      '</td>' +
     '</tr>';
   }).join('');
 }
@@ -736,6 +766,7 @@ function showPassError(msg) {
 var selectedSubjects = [];
 var currentSearchResults = [];
 var currentEnrollments = new Set(); 
+var currentPending = new Set();
 
 function openEnrollmentModal() {
   document.getElementById('enrollmentModalBackdrop').style.display = 'flex';
@@ -752,6 +783,7 @@ function closeEnrollmentModal() {
   selectedSubjects = [];
   currentSearchResults = [];
   updateSelectedSubjectsUI();
+  currentPending = new Set();
 }
 
 async function searchClasses() {
@@ -791,8 +823,12 @@ async function searchClasses() {
       currentEnrollments = new Set(
         (enrollData.subjects || []).map(s => `${s.classId}::${s.id}`)
       );
+      currentPending = new Set(
+        (enrollData.pending || []).map(p => `${p.classId}::${p.subjectId}`)
+      );
     } else {
       currentEnrollments = new Set();
+      currentPending = new Set();
     }
 
     if (currentSearchResults.length === 0) {
@@ -825,10 +861,11 @@ function renderSearchResults() {
       classId: result.classId,
       subjectId: Math.trunc(Number(s.id)),
       subjectName: s.subject,
-      enrolled: currentEnrollments.has(`${result.classId}::${Math.trunc(Number(s.id))}`)
+      enrolled: currentEnrollments.has(`${result.classId}::${Math.trunc(Number(s.id))}`),
+      pending: currentPending.has(`${result.classId}::${Math.trunc(Number(s.id))}`)
     }));
 
-    const unenrolledMeta = subjectMeta.filter(s => !s.enrolled);
+    const unenrolledMeta = subjectMeta.filter(s => !s.enrolled && !s.pending);
     const allEnrolled = unenrolledMeta.length === 0;
     const subjectsPayload = JSON.stringify(unenrolledMeta).replace(/"/g, '&quot;');
 
@@ -851,28 +888,47 @@ function renderSearchResults() {
         <span style="font-size:11px;color:var(--ink5);font-weight:500;flex-shrink:0">${subjects.length} subject${subjects.length !== 1 ? 's' : ''}</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;padding-left:4px">
-        ${subjectMeta.map(s => s.enrolled ? `
-          <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg>
-            <span style="font-size:13px;color:var(--ink3);flex:1">${escapeHTML(s.subjectName)}</span>
-            <span style="font-size:11px;font-weight:600;color:#10B981;margin-right:8px">Enrolled</span>
-            <button type="button"
-              onclick="dropSubject('${s.classId}', ${s.subjectId}, '${escapeHTML(s.subjectName)}', this)"
-              style="border:1px solid rgba(239,68,68,0.35);background:rgba(239,68,68,0.06);color:#ef4444;border-radius:6px;font-size:11.5px;font-weight:600;padding:4px 10px;cursor:pointer;line-height:1.4">
-              Drop
-            </button>
-          </div>
-        ` : `
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink3);padding:4px 0">
-            <input type="checkbox" class="subj-checkbox"
-                   data-class-id="${s.classId}"
-                   data-subject-id="${s.subjectId}"
-                   data-subject-name="${escapeHTML(s.subjectName)}"
-                   data-class-checkbox-id="${classCheckId}"
-                   onchange="handleSubjectSelection(event)"/>
-            <span>${escapeHTML(s.subjectName)}</span>
-          </label>
-        `).join('')}
+        ${subjectMeta.map(s => {
+          if (s.enrolled) {
+            return `
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg>
+                <span style="font-size:13px;color:var(--ink3);flex:1">${escapeHTML(s.subjectName)}</span>
+                <span style="font-size:11px;font-weight:600;color:#10B981;margin-right:8px">Enrolled</span>
+                <button type="button"
+                  onclick="dropSubject('${s.classId}', ${s.subjectId}, '${escapeHTML(s.subjectName)}', this)"
+                  style="border:1px solid rgba(239,68,68,0.35);background:rgba(239,68,68,0.06);color:#ef4444;border-radius:6px;font-size:11.5px;font-weight:600;padding:4px 10px;cursor:pointer;line-height:1.4">
+                  Drop
+                </button>
+              </div>
+            `;
+          } else if (s.pending) {
+            return `
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.2)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span style="font-size:13px;color:var(--ink3);flex:1">${escapeHTML(s.subjectName)}</span>
+                <span style="font-size:11px;font-weight:600;color:#F59E0B;margin-right:8px">Pending Approval</span>
+                <button type="button"
+                  onclick="dropSubject('${s.classId}', ${s.subjectId}, '${escapeHTML(s.subjectName)}', this)"
+                  style="border:1px solid rgba(239,68,68,0.35);background:rgba(239,68,68,0.06);color:#ef4444;border-radius:6px;font-size:11.5px;font-weight:600;padding:4px 10px;cursor:pointer;line-height:1.4">
+                  Cancel
+                </button>
+              </div>
+            `;
+          } else {
+            return `
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink3);padding:4px 0">
+                <input type="checkbox" class="subj-checkbox"
+                       data-class-id="${s.classId}"
+                       data-subject-id="${s.subjectId}"
+                       data-subject-name="${escapeHTML(s.subjectName)}"
+                       data-class-checkbox-id="${classCheckId}"
+                       onchange="handleSubjectSelection(event)"/>
+                <span>${escapeHTML(s.subjectName)}</span>
+              </label>
+            `;
+          }
+        }).join('')}
       </div>
     `;
 
@@ -904,6 +960,7 @@ async function dropSubject(classId, subjectId, subjectName, btnEl) {
     }
 
     currentEnrollments.delete(`${classId}::${subjectId}`);
+    currentPending.delete(`${classId}::${subjectId}`);
     showToast(`Dropped "${subjectName}" successfully`, 'success');
     renderSearchResults();
     loadStudentEnrollments();
@@ -1115,6 +1172,7 @@ async function confirmEnrollment() {
   try {
     let successCount = 0;
     let failureCount = 0;
+    let detailedError = "";
 
     for (const subject of selectedSubjects) {
       try {
@@ -1132,6 +1190,7 @@ async function confirmEnrollment() {
         } else {
           const error = await response.json();
           console.error('Enrollment error:', error);
+          detailedError = error.error || "Unknown Error";
           failureCount++;
         }
       } catch (error) {
@@ -1148,6 +1207,7 @@ async function confirmEnrollment() {
 
     if (failureCount > 0) {
       showToast(`Failed to enroll in ${failureCount} subject(s)`, 'error');
+      alert("Enrollment Failed! Database Error:\n\n" + detailedError + "\n\nPaki-reply sa akin ang eksaktong error message na ito para maayos natin.");
     }
   } catch (error) {
     console.error('Confirmation error:', error);
@@ -1169,8 +1229,14 @@ async function loadStudentEnrollments() {
     const data = await response.json();
     const subjects = data.subjects || [];
 
+    window.HAS_ENROLLMENTS = (data.subjects && data.subjects.length > 0) || (data.pending && data.pending.length > 0);
+
     // Update SUBJECTS array for dashboard rendering
     SUBJECTS = subjects;
+
+    // Itago ang enroll button agad kapag successful ang enrollment
+    var enrollBtn = document.getElementById('enrollBtn');
+    if (enrollBtn) enrollBtn.style.display = (!window.HAS_ENROLLMENTS && document.getElementById('dashboardView').classList.contains('active')) ? '' : 'none';
 
     // Update today's class list
     renderTodayClasses();

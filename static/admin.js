@@ -1,4 +1,3 @@
-
 (function init() {
   const now = new Date();
   const h = now.getHours();
@@ -24,12 +23,11 @@ function switchView(id, btn) {
   title.querySelectorAll('.chip').forEach(c => c.remove());
   document.getElementById('headerTitle').textContent = title.textContent.trim();
   document.getElementById('sidebar').classList.remove('open');
-  
-  // Reload data when switching to students, teachers, or users views
-  if (id === 'students') loadStudents();
-  if (id === 'teachers') loadTeachers();
-  if (id === 'users') loadAllUsers();
-  if (id === 'logs') loadAttendanceLogs();
+
+  if (id === 'students')      loadStudents();
+  if (id === 'teachers')      loadTeachers();
+  if (id === 'users')         loadAllUsers();
+  if (id === 'logs')          loadAttendanceLogs();
   if (id === 'registrations') loadPendingRegistrations();
 }
 
@@ -90,114 +88,193 @@ function removeRow(btn, type) {
 /* ──────────────────────────────────────────
    REGISTRATIONS
 ────────────────────────────────────────── */
-let pendingCount = 5;
+let pendingCount = 0;
+
+// Helper: pick a consistent color from a UUID string (fixes the NaN bug
+// that happened when doing uuid % number — UUIDs are not numbers).
+function colorFromId(id) {
+  const colors = ['var(--accent)', '#e91e8c', '#10b981', '#f59e0b', '#a855f7', '#06b6d4'];
+  // Sum the char codes of the id string to get a stable numeric index
+  const sum = String(id).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return colors[sum % colors.length];
+}
 
 function updatePendingBadges() {
-  const txt = pendingCount > 0 ? pendingCount + ' pending' : 'None';
-  document.getElementById('pendingChip').textContent = txt;
-  document.getElementById('sbPendingBadge').textContent = pendingCount;
-  document.getElementById('dPending').textContent = pendingCount;
-  if (pendingCount === 0) document.getElementById('sbPendingBadge').style.display = 'none';
+  const badge = document.getElementById('sbPendingBadge');
+  const chip  = document.getElementById('pendingChip');
+  const dash  = document.getElementById('dPending');
+
+  if (chip)  chip.textContent  = pendingCount > 0 ? pendingCount + ' pending' : 'None';
+  if (dash)  dash.textContent  = pendingCount;
+
+  if (badge) {
+    badge.textContent    = pendingCount;
+    badge.style.display  = pendingCount > 0 ? '' : 'none';   // always reset display first
+  }
 }
+
 async function loadPendingRegistrations() {
+  const regList = document.getElementById('regList');
+  regList.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">Loading…</div>';
+
   try {
     const response = await fetch('/api/admin/registrations');
     if (!response.ok) throw new Error('Failed to fetch registrations');
     const registrations = await response.json();
-    const regList = document.getElementById('regList');
+
     regList.innerHTML = '';
-    
     pendingCount = registrations.length;
     updatePendingBadges();
-    
+
+    // Empty state
+    if (registrations.length === 0) {
+      regList.innerHTML = `
+        <div style="text-align:center;padding:36px 16px;color:var(--text3)">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 12px;display:block;opacity:.4">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <div style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:4px">All caught up!</div>
+          <div style="font-size:12px">No pending registrations right now.</div>
+        </div>`;
+      return;
+    }
+
     registrations.forEach(reg => {
-      const colors = ['var(--accent)', '#e91e8c', '#10b981', '#f59e0b', '#a855f7', '#06b6d4'];
-      const color = colors[Math.abs(reg.id % colors.length)];
-      const initials = reg.fullname.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-      const type = reg.role === 'student' ? 'Student' : 'Teacher';
-      const details = reg.role === 'student' 
-        ? `${reg.course || ''} · ${reg.section || ''}`
+      const color    = colorFromId(reg.id);
+      // reg.fullname comes from user_metadata.name which is stored as "Lastname, Firstname"
+      const initials = reg.fullname.split(/[\s,]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      const type     = reg.role === 'student' ? 'Student' : 'Teacher';
+      const details  = reg.role === 'student'
+        ? [reg.course, reg.section].filter(Boolean).join(' · ')
         : reg.course || '';
-      
+
+      // Email-verified badge
+      const verifiedBadge = `<span style="
+        display:inline-flex;align-items:center;gap:3px;
+        background:var(--green-bg);color:var(--green);
+        font-size:10px;font-weight:700;
+        padding:2px 7px;border-radius:99px;margin-left:6px">
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+             stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        Email Verified
+      </span>`;
+
       const item = document.createElement('div');
-      item.className = 'reg-item';
-      item.dataset.id = reg.id;
-      item.dataset.type = reg.role;
+      item.className      = 'reg-item';
+      item.dataset.id     = reg.id;
+      item.dataset.type   = reg.role;
       item.innerHTML = `
-        <div class="avatar" style="background:${color};width:36px;height:36px;font-size:11px">${initials}</div>
+        <div class="avatar" style="background:${color};width:36px;height:36px;font-size:11px;flex-shrink:0">${initials}</div>
         <div class="reg-info">
-          <div class="reg-name">${reg.fullname}</div>
-          <div class="reg-sub">${type} · Applied ${new Date(reg.created_at).toLocaleDateString()} · ${details} · ${reg.email}</div>
+          <div class="reg-name">
+            ${escHtml(reg.fullname)}
+            ${verifiedBadge}
+          </div>
+          <div class="reg-sub">
+            ${type} · Applied ${new Date(reg.created_at).toLocaleDateString()}
+            ${details ? ' · ' + escHtml(details) : ''}
+            · ${escHtml(reg.email)}
+          </div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
-          <button class="btn btn-xs btn-success" onclick="handleReg(this,'accept')">Accept</button>
-          <button class="btn btn-xs btn-danger"  onclick="handleReg(this,'decline')">Decline</button>
-        </div>
-      `;
+          <button class="btn btn-xs btn-success" onclick="handleReg(this,'accept')">✓ Accept</button>
+          <button class="btn btn-xs btn-danger"  onclick="handleReg(this,'decline')">✕ Decline</button>
+        </div>`;
       regList.appendChild(item);
     });
+
   } catch (error) {
     console.error('Error loading registrations:', error);
+    regList.innerHTML = `<div style="text-align:center;padding:24px;color:var(--red);font-size:13px">
+      Failed to load registrations. Please try again.</div>`;
     toast('Error loading registrations');
   }
 }
+
 async function handleReg(btn, action) {
   const item = btn.closest('.reg-item');
-  const registrationId = item.dataset.id;
-  
+  const userId = item.dataset.id;
+
+  // Disable both buttons while the request is in flight
+  item.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = '.5'; });
+
   try {
-    const endpoint = action === 'accept' 
-      ? `/api/admin/accept-registration/${registrationId}`
-      : `/api/admin/decline-registration/${registrationId}`;
-    
+    const endpoint = action === 'accept'
+      ? `/api/admin/accept-registration/${userId}`
+      : `/api/admin/decline-registration/${userId}`;
+
     const response = await fetch(endpoint, { method: 'POST' });
-    if (!response.ok) throw new Error('Failed to process registration');
-    
-    item.style.transition = 'opacity .25s';
-    item.style.opacity = '0';
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Server error');
+    }
+
+    item.style.transition = 'opacity .25s, transform .25s';
+    item.style.opacity    = '0';
+    item.style.transform  = 'translateX(12px)';
     item.style.pointerEvents = 'none';
-    setTimeout(() => { item.remove(); pendingCount--; updatePendingBadges(); }, 260);
+    setTimeout(() => {
+      item.remove();
+      pendingCount = Math.max(0, pendingCount - 1);
+      updatePendingBadges();
+
+      // Show empty state if nothing left
+      const regList = document.getElementById('regList');
+      if (regList && regList.querySelectorAll('.reg-item').length === 0) {
+        regList.innerHTML = `
+          <div style="text-align:center;padding:36px 16px;color:var(--text3)">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 12px;display:block;opacity:.4">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <div style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:4px">All caught up!</div>
+            <div style="font-size:12px">No pending registrations right now.</div>
+          </div>`;
+      }
+    }, 280);
+
     toast(action === 'accept' ? '✓ Registration accepted!' : '✕ Registration declined.');
   } catch (error) {
     console.error('Error:', error);
-    toast('Error processing registration');
+    toast('Error: ' + error.message);
+    // Re-enable buttons on failure
+    item.querySelectorAll('button').forEach(b => { b.disabled = false; b.style.opacity = ''; });
   }
 }
 
 function bulkApprove() {
-  const items = document.querySelectorAll('#regList .reg-item:not([style*="display: none"])');
-  items.forEach(i => {
-    const btn = i.querySelector('.btn-success');
-    if (btn) btn.click();
-  });
-  toast('✓ Processing all visible registrations...');
+  const items = [...document.querySelectorAll('#regList .reg-item')].filter(i => i.style.display !== 'none');
+  if (!items.length) { toast('Nothing to approve.'); return; }
+  items.forEach(i => i.querySelector('.btn-success')?.click());
 }
 
 function bulkDecline() {
-  const items = document.querySelectorAll('#regList .reg-item:not([style*="display: none"])');
-  items.forEach(i => {
-    const btn = i.querySelector('.btn-danger');
-    if (btn) btn.click();
-  });
-  toast('✕ Processing all visible registrations...');
+  const items = [...document.querySelectorAll('#regList .reg-item')].filter(i => i.style.display !== 'none');
+  if (!items.length) { toast('Nothing to decline.'); return; }
+  if (!confirm('Decline all visible registrations?')) return;
+  items.forEach(i => i.querySelector('.btn-danger')?.click());
 }
 
 function filterReg(type) {
   document.querySelectorAll('#regList .reg-item').forEach(i => {
     i.style.display = (type === 'all' || i.dataset.type === type) ? '' : 'none';
   });
-  ['rbAll','rbStu','rbTea'].forEach(id => {
+  ['rbAll', 'rbStu', 'rbTea'].forEach(id => {
     const b = document.getElementById(id);
-    b.style.background = '';
-    b.style.color = '';
+    if (!b) return;
+    b.style.background  = '';
+    b.style.color       = '';
     b.style.borderColor = '';
   });
   const map = { all: 'rbAll', student: 'rbStu', teacher: 'rbTea' };
   const ab = document.getElementById(map[type]);
   if (ab) {
-    ab.style.background   = 'var(--accent)';
-    ab.style.color        = '#fff';
-    ab.style.borderColor  = 'var(--accent)';
+    ab.style.background  = 'var(--accent)';
+    ab.style.color       = '#fff';
+    ab.style.borderColor = 'var(--accent)';
   }
 }
 filterReg('all');
@@ -212,19 +289,26 @@ async function loadStudents() {
     const students = await response.json();
     const tbody = document.getElementById('studentsTbody');
     tbody.innerHTML = '';
+
+    if (!students.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">No students found.</td></tr>';
+      return;
+    }
+
     students.forEach(s => {
-      const initials = s.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-      const colors = ['var(--accent)', '#e91e8c', '#10b981', '#f59e0b', '#a855f7', '#06b6d4'];
-      const color = colors[Math.abs(s.id.charCodeAt(0)) % colors.length];
+      const initials = s.name.split(/[\s,]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      const color = colorFromId(s.id);
       const row = document.createElement('tr');
       row.dataset.search = (s.name + ' ' + s.id + ' ' + (s.course || '') + ' ' + (s.section || '')).toLowerCase();
       row.innerHTML = `
-        <td><div class="name-cell"><div class="avatar" style="background:${color};width:30px;height:30px;font-size:10px">${initials}</div>${s.name}</div></td>
-        <td class="mono">${s.id}</td>
-        <td>${s.course || ''}</td>
-        <td><span class="chip chip-section">${s.section || 'N/A'}</span></td>
-        <td><button class="btn btn-xs btn-danger" onclick="removeRow(this,'student')">Remove</button></td>
-      `;
+        <td><div class="name-cell">
+          <div class="avatar" style="background:${color};width:30px;height:30px;font-size:10px">${initials}</div>
+          ${escHtml(s.name)}
+        </div></td>
+        <td class="mono">${escHtml(s.id)}</td>
+        <td>${escHtml(s.course || '')}</td>
+        <td><span class="chip chip-section">${escHtml(s.section || 'N/A')}</span></td>
+        <td><button class="btn btn-xs btn-danger" onclick="removeRow(this,'student')">Remove</button></td>`;
       tbody.appendChild(row);
     });
   } catch (error) {
@@ -240,18 +324,25 @@ async function loadTeachers() {
     const teachers = await response.json();
     const tbody = document.getElementById('teachersTbody');
     tbody.innerHTML = '';
+
+    if (!teachers.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:24px">No teachers found.</td></tr>';
+      return;
+    }
+
     teachers.forEach(t => {
-      const initials = t.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-      const colors = ['var(--accent)', '#e91e8c', '#10b981', '#f59e0b', '#a855f7', '#06b6d4'];
-      const color = colors[Math.abs(t.id.charCodeAt(0)) % colors.length];
+      const initials = t.name.split(/[\s,]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      const color = colorFromId(t.id);
       const row = document.createElement('tr');
       row.dataset.search = (t.name + ' ' + t.id + ' ' + (t.subject || '')).toLowerCase();
       row.innerHTML = `
-        <td><div class="name-cell"><div class="avatar" style="background:${color};width:30px;height:30px;font-size:10px">${initials}</div>${t.name}</div></td>
-        <td class="mono">${t.id}</td>
-        <td>${t.subject || ''}</td>
-        <td><button class="btn btn-xs btn-danger" onclick="removeRow(this,'teacher')">Remove</button></td>
-      `;
+        <td><div class="name-cell">
+          <div class="avatar" style="background:${color};width:30px;height:30px;font-size:10px">${initials}</div>
+          ${escHtml(t.name)}
+        </div></td>
+        <td class="mono">${escHtml(t.id)}</td>
+        <td>${escHtml(t.subject || '')}</td>
+        <td><button class="btn btn-xs btn-danger" onclick="removeRow(this,'teacher')">Remove</button></td>`;
       tbody.appendChild(row);
     });
   } catch (error) {
@@ -267,38 +358,39 @@ async function loadAllUsers() {
     const users = await response.json();
     const tbody = document.getElementById('usersTbody');
     tbody.innerHTML = '';
-    
+
     let studentCount = 0, teacherCount = 0;
-    
-    users.forEach(u => {
-      const initials = u.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-      const colors = ['var(--accent)', '#e91e8c', '#10b981', '#f59e0b', '#a855f7', '#06b6d4'];
-      const color = colors[Math.abs(u.id.charCodeAt(0)) % colors.length];
-      
-      const isStudent = u.role === 'student';
-      if (isStudent) studentCount++; else teacherCount++;
-      
-      const row = document.createElement('tr');
-      row.dataset.search = (u.name + ' ' + u.id + ' ' + (u.course || u.subject || '') + ' ' + (u.section || '') + ' ' + u.email + ' ' + u.role).toLowerCase();
-      
-      const nameEsc = (u.name || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      const idEsc = (u.id || '').replace(/"/g, '&quot;');
-      const courseEsc = (u.course || u.subject || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      const sectionEsc = (u.section || '—').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      const emailEsc = (u.email || '').replace(/"/g, '&quot;');
-      const roleEsc = isStudent ? 'Student' : 'Teacher';
-      
-      row.innerHTML = `
-        <td><span class="link-name" onclick="openProfile('${nameEsc}','${idEsc}','${roleEsc}','${courseEsc}','${sectionEsc}','${emailEsc}')">${u.name}</span></td>
-        <td><span class="chip ${isStudent ? 'chip-section' : 'chip-teacher'}">${isStudent ? 'Student' : 'Teacher'}</span></td>
-        <td>${u.course || u.subject || ''}</td>
-        <td>${u.section || '—'}</td>
-        <td class="mono" style="font-size:11px">${u.email}</td>
-      `;
-      tbody.appendChild(row);
-    });
-    
-    document.getElementById('uTotal').textContent = users.length;
+
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">No users found.</td></tr>';
+    } else {
+      users.forEach(u => {
+        const initials = u.name.split(/[\s,]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+        const color    = colorFromId(u.id);
+        const isStudent = u.role === 'student';
+        if (isStudent) studentCount++; else teacherCount++;
+
+        const row = document.createElement('tr');
+        row.dataset.search = (u.name + ' ' + u.id + ' ' + (u.course || u.subject || '') + ' ' + (u.section || '') + ' ' + u.email + ' ' + u.role).toLowerCase();
+
+        const nameEsc    = escAttr(u.name);
+        const idEsc      = escAttr(u.id);
+        const courseEsc  = escAttr(u.course || u.subject || '');
+        const sectionEsc = escAttr(u.section || '—');
+        const emailEsc   = escAttr(u.email);
+        const roleLabel  = isStudent ? 'Student' : 'Teacher';
+
+        row.innerHTML = `
+          <td><span class="link-name" onclick="openProfile('${nameEsc}','${idEsc}','${roleLabel}','${courseEsc}','${sectionEsc}','${emailEsc}')">${escHtml(u.name)}</span></td>
+          <td><span class="chip ${isStudent ? 'chip-section' : 'chip-teacher'}">${roleLabel}</span></td>
+          <td>${escHtml(u.course || u.subject || '')}</td>
+          <td>${escHtml(u.section || '—')}</td>
+          <td class="mono" style="font-size:11px">${escHtml(u.email)}</td>`;
+        tbody.appendChild(row);
+      });
+    }
+
+    document.getElementById('uTotal').textContent    = users.length;
     document.getElementById('uStudents').textContent = studentCount;
     document.getElementById('uTeachers').textContent = teacherCount;
   } catch (error) {
@@ -307,14 +399,131 @@ async function loadAllUsers() {
   }
 }
 
-// Load data on page load
+// Load all data on page load
 document.addEventListener('DOMContentLoaded', () => {
   loadStudents();
   loadTeachers();
   loadAllUsers();
   loadAttendanceLogs();
   loadPendingRegistrations();
+  loadTodayClasses();
 });
+
+/* ──────────────────────────────────────────
+   TODAY'S CLASSES
+────────────────────────────────────────── */
+async function loadTodayClasses() {
+  const body = document.getElementById('todayClassesBody');
+  if (!body) return;
+
+  const shortDays  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const now        = new Date();
+  const todayShort = shortDays[now.getDay()];
+
+  body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">Loading…</div>';
+
+  try {
+    const [cRes, tRes] = await Promise.all([
+      fetch('/api/admin/classes'),
+      fetch('/api/admin/teachers')
+    ]);
+    if (!cRes.ok) throw new Error('Could not load classes');
+
+    const { classes } = await cRes.json();
+    const teachers    = tRes.ok ? await tRes.json() : [];
+
+    const shortIdToName = {};
+    teachers.forEach(t => { shortIdToName[t.id] = t.name; });
+
+    const byTeacher = {};
+    (classes || []).forEach(cls => {
+      (cls.subjects || []).forEach(sub => {
+        const daysArr = Array.isArray(sub.days)
+          ? sub.days
+          : (sub.days ? sub.days.split(',').map(d => d.trim()) : []);
+        if (!daysArr.includes(todayShort)) return;
+
+        const tid = cls.teacher_id;
+        if (!byTeacher[tid]) {
+          const shortId = tid.slice(0, 8).toUpperCase();
+          byTeacher[tid] = { name: shortIdToName[shortId] || 'Unknown Teacher', items: [] };
+        }
+        byTeacher[tid].items.push({
+          time:      sub.start_time || '??:??',
+          end_time:  sub.end_time   || '',
+          subject:   sub.subject    || 'Unknown Subject',
+          className: cls.class_name || '',
+          room:      sub.room       || 'TBA',
+        });
+      });
+    });
+
+    Object.values(byTeacher).forEach(t => t.items.sort((a, b) => a.time > b.time ? 1 : -1));
+
+    const entries = Object.entries(byTeacher).filter(([, d]) => d.items.length > 0);
+
+    if (entries.length === 0) {
+      body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text3);font-size:13px">No classes scheduled for today.</div>';
+      return;
+    }
+
+    const palette = ['var(--accent)','#e91e8c','#f59e0b','#10b981','#a855f7','#06b6d4'];
+    let html = '';
+    entries.forEach(([, data], idx) => {
+      const key      = 'rtc' + idx;
+      const color    = palette[idx % palette.length];
+      const initials = data.name.split(/[\s,]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'T' + (idx + 1);
+      html += `
+        <div class="teacher-block">
+          <div class="teacher-hdr" onclick="toggleSched('${key}')">
+            <div class="avatar" style="background:${color};width:36px;height:36px;font-size:11px">${esc(initials)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:700;color:var(--text)">${esc(data.name)}</div>
+              <div style="font-size:11px;color:var(--text2)">${esc(data.items[0].subject)} · ${data.items.length} class${data.items.length > 1 ? 'es' : ''}</div>
+            </div>
+            <span class="teacher-expand" id="ico-${key}">▾</span>
+          </div>
+          <div class="teacher-sched" id="sched-${key}" style="display:none">
+            ${data.items.map(item => buildSchedItem(item, now)).join('')}
+          </div>
+        </div>`;
+    });
+    body.innerHTML = html;
+
+  } catch (err) {
+    console.error('[loadTodayClasses]', err);
+    body.innerHTML = `<div style="padding:16px;color:var(--red);font-size:13px">Failed to load: ${err.message}</div>`;
+  }
+}
+
+function buildSchedItem(item, now) {
+  const cur      = now.getHours() * 60 + now.getMinutes();
+  const parseMin = t => { if (!t) return null; const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const start    = parseMin(item.time);
+  const end      = parseMin(item.end_time);
+
+  let chip, borderColor;
+  if (end !== null && cur > end) {
+    chip = `<span class="chip chip-present">Done</span>`;
+    borderColor = 'var(--green)';
+  } else if (start !== null && cur >= start && (end === null || cur <= end)) {
+    chip = `<span class="chip chip-section">Active</span>`;
+    borderColor = 'var(--accent)';
+  } else {
+    chip = `<span class="chip" style="background:var(--surface2);color:var(--text2)">Upcoming</span>`;
+    borderColor = 'var(--text3)';
+  }
+
+  return `
+    <div class="sched-item" style="border-left-color:${borderColor}">
+      <span class="sched-time" style="color:${borderColor}">${esc(item.time)}</span>
+      <div>
+        <div class="sched-class">${esc(item.subject)} — ${esc(item.className)}</div>
+        <div class="sched-room">${esc(item.room)}</div>
+      </div>
+      ${chip}
+    </div>`;
+}
 
 /* ──────────────────────────────────────────
    ATTENDANCE LOGS
@@ -326,17 +535,24 @@ async function loadAttendanceLogs() {
     const logs = await response.json();
     const tbody = document.getElementById('logsTbody');
     tbody.innerHTML = '';
+
+    if (!logs.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">No records found.</td></tr>';
+      return;
+    }
+
     logs.forEach(log => {
+      const statusClass = log.status === 'Present' ? 'chip-present'
+                        : log.status === 'Absent'  ? 'chip-absent'
+                        : 'chip-late';
       const row = document.createElement('tr');
-      const statusClass = log.status === 'Present' ? 'chip-present' : log.status === 'Absent' ? 'chip-absent' : 'chip-late';
       row.innerHTML = `
-        <td class="mono">${new Date(log.date).toISOString().split('T')[0]}</td>
-        <td>${log.student_name}</td>
-        <td class="mono">${log.time}</td>
-        <td>${log.subject}</td>
-        <td>${log.period || '—'}</td>
-        <td><span class="chip ${statusClass}">${log.status}</span></td>
-      `;
+        <td class="mono">${esc(log.date ? String(log.date).split('T')[0] : '—')}</td>
+        <td>${esc(log.student_name)}</td>
+        <td class="mono">${esc(log.time)}</td>
+        <td>${esc(log.subject)}</td>
+        <td>${esc(log.period)}</td>
+        <td><span class="chip ${statusClass}">${esc(log.status)}</span></td>`;
       tbody.appendChild(row);
     });
   } catch (error) {
@@ -348,35 +564,29 @@ async function loadAttendanceLogs() {
 /* ──────────────────────────────────────────
    PROFILE MODAL
 ────────────────────────────────────────── */
-const avatarColors = {
-  'John Doe':'var(--accent)', 'Jane Smith':'#e91e8c', 'Bob Johnson':'#10b981',
-  'Alice Brown':'#f59e0b', 'Charlie Wilson':'#a855f7', 'Diana Lee':'#06b6d4',
-  'Mr. James Reyes':'var(--accent)', 'Ms. Anna Cruz':'#e91e8c'
-};
-
 function openProfile(name, id, role, course, section, email) {
   document.getElementById('profileTitle').textContent = name;
-  const initials = name.replace(/^(Mr\.|Ms\.|Mrs\.)\s*/i,'').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-  const color    = avatarColors[name] || 'var(--accent)';
+  const initials = name.replace(/^(Mr\.|Ms\.|Mrs\.)\s*/i, '').split(/[\s,]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const color    = colorFromId(id);
   document.getElementById('profileAvatar').innerHTML =
-    '<div class="avatar" style="background:' + color + ';width:48px;height:48px;font-size:13px;flex-shrink:0">' + initials + '</div>' +
-    '<div><div style="font-size:15px;font-weight:700;color:var(--text)">' + name + '</div>' +
-    '<span class="chip ' + (role === 'Teacher' ? 'chip-teacher' : 'chip-section') + '" style="margin-top:4px">' + role + '</span></div>';
+    `<div class="avatar" style="background:${color};width:48px;height:48px;font-size:13px;flex-shrink:0">${initials}</div>` +
+    `<div><div style="font-size:15px;font-weight:700;color:var(--text)">${escHtml(name)}</div>` +
+    `<span class="chip ${role === 'Teacher' ? 'chip-teacher' : 'chip-section'}" style="margin-top:4px">${role}</span></div>`;
   document.getElementById('profileBody').innerHTML =
     '<table style="width:100%;border-collapse:collapse">' +
-      row('ID', '<span class="mono">' + id + '</span>') +
-      row('Course / Subject', course) +
-      row('Section', section) +
-      row('Email', '<span class="mono" style="font-size:12px">' + email + '</span>') +
+      profileRow('ID',               `<span class="mono">${escHtml(id)}</span>`) +
+      profileRow('Course / Subject', escHtml(course)) +
+      profileRow('Section',          escHtml(section)) +
+      profileRow('Email',            `<span class="mono" style="font-size:12px">${escHtml(email)}</span>`) +
     '</table>';
   openModal('profileModal');
 }
 
-function row(label, val) {
-  return '<tr>' +
-    '<td style="padding:7px 0;color:var(--text3);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;width:130px">' + label + '</td>' +
-    '<td style="padding:7px 0;color:var(--text);font-size:13px">' + val + '</td>' +
-    '</tr>';
+function profileRow(label, val) {
+  return `<tr>
+    <td style="padding:7px 0;color:var(--text3);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;width:130px">${label}</td>
+    <td style="padding:7px 0;color:var(--text);font-size:13px">${val}</td>
+  </tr>`;
 }
 
 /* ──────────────────────────────────────────
@@ -390,8 +600,8 @@ function openAddModal(role) {
 
 function onRoleChange() {
   const role = document.getElementById('newRole').value;
-  document.getElementById('newIdLabel').textContent    = role === 'student' ? 'Student ID'    : 'Employee ID';
-  document.getElementById('newCourseLabel').textContent= role === 'student' ? 'Course'         : 'Subject';
+  document.getElementById('newIdLabel').textContent     = role === 'student' ? 'Student ID'  : 'Employee ID';
+  document.getElementById('newCourseLabel').textContent = role === 'student' ? 'Course'       : 'Subject';
   document.getElementById('studentOnlyFields').style.display = role === 'student' ? '' : 'none';
   document.getElementById('teacherOnlyFields').style.display = role === 'teacher' ? '' : 'none';
 }
@@ -406,7 +616,7 @@ function submitUser() {
     const el = document.getElementById(f);
     if (el) el.value = '';
   });
-  toast('✓ User "' + name + '" created successfully!');
+  toast(`✓ User "${name}" created successfully!`);
 }
 
 /* ──────────────────────────────────────────
@@ -416,7 +626,7 @@ function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', function(e) {
+  overlay.addEventListener('click', function (e) {
     if (e.target === this) closeModal(this.id);
   });
 });
@@ -429,7 +639,7 @@ document.addEventListener('keydown', e => {
 });
 
 /* ──────────────────────────────────────────
-   LOGS
+   LOG CONTROLS
 ────────────────────────────────────────── */
 function applyLogFilter() {
   const stu = document.getElementById('fStudent').value.trim().toLowerCase();
@@ -442,7 +652,7 @@ function applyLogFilter() {
     row.style.display = ok ? '' : 'none';
     if (ok) shown++;
   });
-  document.getElementById('filterMsg').textContent = 'Showing ' + shown + ' record(s).';
+  document.getElementById('filterMsg').textContent = `Showing ${shown} record(s).`;
 }
 
 function exportLogs() {
@@ -451,7 +661,7 @@ function exportLogs() {
   rows.forEach(r => {
     if (r.style.display === 'none') return;
     const cells = r.querySelectorAll('td');
-    csv += [...cells].map(c => '"' + c.textContent.trim() + '"').join(',') + '\n';
+    csv += [...cells].map(c => `"${c.textContent.trim()}"`).join(',') + '\n';
   });
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
@@ -462,7 +672,22 @@ function exportLogs() {
 
 function clearLogs() {
   if (!confirm('Clear all attendance records? This cannot be undone.')) return;
-  document.getElementById('logsTbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">No records.</td></tr>';
+  document.getElementById('logsTbody').innerHTML =
+    '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">No records.</td></tr>';
   document.getElementById('filterMsg').textContent = '';
   toast('Logs cleared.');
+}
+
+/* ──────────────────────────────────────────
+   UTILITY: HTML escaping
+────────────────────────────────────────── */
+// Used inside innerHTML strings (escapes < > & " but not single quotes)
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// Alias used in most places (same as esc)
+function escHtml(str) { return esc(str); }
+// Used inside HTML attribute values wrapped in single quotes — escapes '
+function escAttr(str) {
+  return String(str || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }

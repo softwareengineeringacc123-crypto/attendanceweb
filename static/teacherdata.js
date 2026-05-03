@@ -415,88 +415,619 @@ function fmtTimeRange(start, end) {
 }
 
 // ===========================
-// ATTENDANCE VIEW
-// ===========================
 
+
+// =====================================================================
+// ATTENDANCE VIEW — EXCEL-STYLE EDITABLE GRID
+
+
+// =====================================================================
+// ATTENDANCE VIEW — EXCEL-STYLE EDITABLE GRID (REDESIGNED)
+// Replace the entire section from "const excelState = {" down to
+// "function exportAttendanceCSV" in your teacherdata.js
+// =====================================================================
+
+// ── State for the Excel grid ──────────────────────────────────────────
+const excelState = {
+  isEditMode: false,
+  pendingChanges: {},   // { "email|dateKey": newStatus }
+  allRecords: [],       // raw records from server
+  classRef: null,
+  subjectRef: null,
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────
+function statusCycle(current) {
+  if (!current || current === 'absent') return 'present';
+  if (current === 'present') return 'absent';
+  if (current === 'late') return 'present';
+  return 'present';
+}
+
+// Avatar colors — one per student, cycling
+const AVATAR_COLORS = [
+  { bg: '#4f46e5', text: '#fff' },
+  { bg: '#0891b2', text: '#fff' },
+  { bg: '#059669', text: '#fff' },
+  { bg: '#d97706', text: '#fff' },
+  { bg: '#dc2626', text: '#fff' },
+  { bg: '#7c3aed', text: '#fff' },
+  { bg: '#db2777', text: '#fff' },
+  { bg: '#0284c7', text: '#fff' },
+  { bg: '#16a34a', text: '#fff' },
+  { bg: '#9333ea', text: '#fff' },
+];
+
+function getAvatarColor(index) {
+  return AVATAR_COLORS[index % AVATAR_COLORS.length];
+}
+
+function cellStyle(status) {
+  const map = {
+    present: { bg: 'rgba(34,197,94,.15)', color: '#22c55e', border: 'rgba(34,197,94,.3)' },
+    absent:  { bg: 'rgba(239,68,68,.15)', color: '#ef4444', border: 'rgba(239,68,68,.3)' },
+    late:    { bg: 'rgba(245,158,11,.15)', color: '#f59e0b', border: 'rgba(245,158,11,.3)' },
+    null:    { bg: 'var(--dark-700)', color: 'var(--text-sub)', border: 'rgba(79,172,254,.12)' },
+  };
+  return map[status] || map.null;
+}
+
+function fmtColDate(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return { day: dateStr, mon: '', year: '' };
+  return {
+    day:  String(d.getDate()).padStart(2, '0'),
+    mon:  d.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
+    year: String(d.getFullYear()),
+  };
+}
+
+// ── Main view ─────────────────────────────────────────────────────────
 function openAttendanceView(cls, subject) {
   state.currentView = 'attendance';
-  state.selectedClassId  = cls.id;
+  state.selectedClassId   = cls.id;
   state.selectedSubjectId = subject.id;
+  excelState.classRef   = cls;
+  excelState.subjectRef = subject;
+  excelState.isEditMode = false;
+  excelState.pendingChanges = {};
 
-  // Build / show the attendance overlay panel
   let panel = document.getElementById('attendancePanel');
   if (!panel) {
     panel = document.createElement('div');
     panel.id = 'attendancePanel';
-    panel.style.cssText = `
-      position:absolute;inset:0;z-index:1100;background:var(--bg,#f0f4fa);
-      display:flex;flex-direction:column;overflow:hidden;`;
+    panel.style.cssText =
+      'position:absolute;inset:0;z-index:1100;background:var(--dark-900);' +
+      'display:flex;flex-direction:column;overflow:hidden;';
     document.querySelector('.main').appendChild(panel);
   }
 
   panel.innerHTML = `
-    <div style="background:var(--surface,#fff);border-bottom:1px solid var(--border,rgba(15,23,42,.08));
-                padding:0 28px;height:60px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-      <div style="display:flex;align-items:center;gap:12px">
-        <button id="attendanceBackBtn"
-          style="display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;
-                 border:1.5px solid var(--border2,rgba(15,23,42,.12));background:var(--surface2,#f8fafc);
-                 color:var(--ink4,#475569);font-size:13px;font-weight:600;cursor:pointer;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    <style>
+      /* ── Attendance panel dark theme ── */
+      #attendancePanel {
+        font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+        background: var(--dark-900);
+        color: #e8f2ff;
+      }
+      .att-topbar {
+        background: var(--dark-800);
+        border-bottom: 2px solid rgba(79,172,254,.18);
+        padding: 0 24px;
+        height: 62px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+        gap: 12px;
+      }
+      .att-back-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 14px;
+        border-radius: 8px;
+        border: 1.5px solid rgba(79,172,254,.18);
+        background: var(--dark-700);
+        color: var(--text-sub);
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .15s;
+        letter-spacing: .3px;
+      }
+      .att-back-btn:hover {
+        background: var(--dark-600);
+        border-color: var(--blue-light);
+        color: #e8f2ff;
+      }
+      .att-action-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1.5px solid rgba(79,172,254,.18);
+        background: var(--dark-700);
+        color: #e8f2ff;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .15s;
+      }
+      .att-action-btn:hover {
+        background: var(--dark-600);
+        border-color: var(--blue-light);
+      }
+      .att-save-btn {
+        background: var(--grad-btn);
+        border-color: var(--blue-light);
+        color: #fff;
+        display: none;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(79,172,254,.25);
+      }
+      .att-save-btn:hover {
+        background: linear-gradient(135deg, #6fbeff 0%, #1a80e8 100%);
+        box-shadow: 0 4px 12px rgba(79,172,254,.35);
+      }
+      .att-cancel-btn {
+        border-color: rgba(239,68,68,.3);
+        color: #f87171;
+        display: none;
+      }
+      .att-cancel-btn:hover {
+        background: rgba(239,68,68,.1);
+        border-color: rgba(239,68,68,.5);
+      }
+      .att-export-btn {
+        background: var(--grad-btn);
+        border-color: var(--blue-light);
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(79,172,254,.25);
+      }
+      .att-export-btn:hover {
+        background: linear-gradient(135deg, #6fbeff 0%, #1a80e8 100%);
+        box-shadow: 0 4px 12px rgba(79,172,254,.35);
+      }
+
+      /* Stats */
+      .att-stat-card {
+        background: var(--dark-800);
+        border-radius: 12px;
+        border: 1.5px solid rgba(79,172,254,.18);
+        padding: 14px 18px;
+        box-shadow: 0 2px 8px rgba(11,18,32,.2);
+      }
+      .att-stat-label {
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        margin-bottom: 4px;
+        color: var(--text-sub);
+      }
+      .att-stat-value {
+        font-size: 26px;
+        font-weight: 900;
+        line-height: 1;
+        color: #e8f2ff;
+      }
+
+      /* Edit mode banner */
+      .att-edit-banner {
+        display: none;
+        background: rgba(245,158,11,.1);
+        border: 1.5px solid rgba(245,158,11,.3);
+        border-radius: 8px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fbbf24;
+        align-items: center;
+        gap: 6px;
+      }
+
+      /* Search bar */
+      .att-search-input {
+        padding: 9px 14px 9px 38px;
+        border: 1.5px solid rgba(79,172,254,.18);
+        border-radius: 9px;
+        font-size: 13px;
+        outline: none;
+        width: 260px;
+        background: var(--dark-700);
+        color: #e8f2ff;
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2374a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 12px center;
+        transition: border .15s, box-shadow .15s;
+      }
+      .att-search-input::placeholder { color: var(--text-sub); }
+      .att-search-input:focus {
+        border-color: var(--blue-light);
+        box-shadow: 0 0 0 3px rgba(79,172,254,.15);
+      }
+      .att-date-input {
+        padding: 9px 12px;
+        border: 1.5px solid rgba(79,172,254,.18);
+        border-radius: 9px;
+        font-size: 13px;
+        outline: none;
+        cursor: pointer;
+        background: var(--dark-700);
+        color: #e8f2ff;
+        transition: border .15s;
+      }
+      .att-date-input:focus {
+        border-color: var(--blue-light);
+        box-shadow: 0 0 0 3px rgba(79,172,254,.15);
+      }
+
+      /* Table */
+      #excelTable {
+        border-collapse: separate;
+        border-spacing: 0;
+        width: max-content;
+        min-width: 100%;
+        background: var(--dark-800);
+      }
+      #excelTable thead th {
+        background: var(--dark-800);
+        position: sticky;
+        top: 0;
+        z-index: 3;
+      }
+      .att-th-student {
+        min-width: 230px;
+        max-width: 230px;
+        padding: 14px 16px;
+        text-align: left;
+        font-size: 10px;
+        font-weight: 800;
+        color: var(--text-sub);
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        border-right: 2px solid rgba(79,172,254,.18);
+        border-bottom: 2px solid var(--blue-light);
+        position: sticky;
+        left: 0;
+        z-index: 5;
+        background: var(--dark-800);
+      }
+      .att-th-rate {
+        min-width: 100px;
+        max-width: 100px;
+        padding: 14px 10px;
+        text-align: center;
+        font-size: 10px;
+        font-weight: 800;
+        color: var(--text-sub);
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        border-right: 2px solid rgba(79,172,254,.18);
+        border-bottom: 2px solid var(--blue-light);
+        position: sticky;
+        left: 230px;
+        z-index: 4;
+        background: var(--dark-800);
+      }
+      .att-th-date {
+        min-width: 96px;
+        max-width: 110px;
+        padding: 0;
+        border-right: 1px solid rgba(79,172,254,.12);
+        border-bottom: 2px solid var(--blue-light);
+        text-align: center;
+        vertical-align: bottom;
+        background: var(--dark-800);
+      }
+      .att-th-date-inner {
+        padding: 10px 8px 12px;
+      }
+      .att-th-date-mon {
+        font-size: 9px;
+        font-weight: 800;
+        color: var(--text-sub);
+        letter-spacing: .1em;
+        text-transform: uppercase;
+      }
+      .att-th-date-day {
+        font-size: 22px;
+        font-weight: 900;
+        color: #e8f2ff;
+        line-height: 1;
+        margin: 1px 0;
+      }
+      .att-th-date-year {
+        font-size: 9px;
+        color: var(--text-sub);
+      }
+
+      /* Body rows */
+      #excelTable tbody tr {
+        transition: background .1s;
+        background: var(--dark-900);
+      }
+      #excelTable tbody tr:hover {
+        background: var(--dark-700);
+      }
+      #excelTable tbody tr:hover td {
+        background: var(--dark-700) !important;
+      }
+      .att-td-student {
+        padding: 0;
+        border-right: 2px solid rgba(79,172,254,.18);
+        border-bottom: 1.5px solid rgba(79,172,254,.08);
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        min-width: 230px;
+        max-width: 230px;
+        background: var(--dark-800);
+      }
+      .att-td-student-inner {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        height: 52px;
+        box-sizing: border-box;
+      }
+      .att-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 800;
+        background: var(--grad-main);
+        color: #fff;
+      }
+      .att-student-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #e8f2ff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .att-student-email {
+        font-size: 10px;
+        color: var(--text-sub);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-family: monospace;
+        margin-top: 1px;
+      }
+      .att-td-rate {
+        padding: 8px 10px;
+        border-right: 2px solid rgba(79,172,254,.18);
+        border-bottom: 1.5px solid rgba(79,172,254,.08);
+        position: sticky;
+        left: 230px;
+        z-index: 2;
+        min-width: 100px;
+        max-width: 100px;
+        vertical-align: middle;
+        text-align: center;
+        background: var(--dark-800);
+      }
+      .att-rate-pct {
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1;
+        color: #e8f2ff;
+      }
+      .att-rate-bar-wrap {
+        height: 4px;
+        border-radius: 99px;
+        background: rgba(79,172,254,.12);
+        margin-top: 5px;
+        overflow: hidden;
+      }
+      .att-rate-bar-fill {
+        height: 100%;
+        border-radius: 99px;
+      }
+      .att-rate-breakdown {
+        font-size: 9px;
+        color: var(--text-sub);
+        margin-top: 4px;
+        font-weight: 600;
+        letter-spacing: .3px;
+      }
+      .att-td-cell {
+        padding: 0;
+        border-right: 1px solid rgba(79,172,254,.08);
+        border-bottom: 1.5px solid rgba(79,172,254,.08);
+        text-align: center;
+        background: var(--dark-800);
+      }
+      .att-cell-inner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 52px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: .2px;
+        transition: filter .1s;
+      }
+      .att-cell-inner.editable {
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: all .12s;
+      }
+      .att-cell-inner.editable:hover {
+        filter: brightness(1.1);
+        border-color: rgba(79,172,254,.3) !important;
+      }
+
+      /* Legend */
+      .att-legend {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        padding: 10px 0 8px;
+        font-size: 11px;
+        color: var(--text-sub);
+        flex-wrap: wrap;
+      }
+      .att-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-weight: 600;
+        color: #e8f2ff;
+      }
+      .att-legend-dot {
+        width: 13px;
+        height: 13px;
+        border-radius: 4px;
+        border: 1.5px solid;
+      }
+
+      /* Scrollable wrap */
+      .att-table-wrap {
+        overflow: auto;
+        border: 1.5px solid rgba(79,172,254,.18);
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(11,18,32,.3);
+        background: var(--dark-800);
+      }
+
+      /* Status colors - dark theme */
+      .status-present { background: rgba(34,197,94,.15); color: #22c55e; border-color: rgba(34,197,94,.3); }
+      .status-absent { background: rgba(239,68,68,.15); color: #ef4444; border-color: rgba(239,68,68,.3); }
+      .status-late { background: rgba(245,158,11,.15); color: #f59e0b; border-color: rgba(245,158,11,.3); }
+      .status-null { background: var(--dark-700); color: var(--text-sub); border-color: rgba(79,172,254,.12); }
+    </style>
+
+    <!-- ── Top bar ── -->
+    <div class="att-topbar">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0">
+        <button id="attendanceBackBtn" class="att-back-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
           Back
         </button>
-        <div>
-          <div style="font-size:15px;font-weight:700;color:var(--ink2,#1e293b)">${escapeHTML(subject.subject)}</div>
-          <div style="font-size:12px;color:var(--ink5,#64748b)">${escapeHTML(cls.class_name)} · ${fmtTimeRange(subject.start_time, subject.end_time)}${subject.room ? ' · ' + escapeHTML(subject.room) : ''}</div>
+        <div style="min-width:0">
+          <div style="font-size:15px;font-weight:800;color:#e8f2ff;
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${escapeHTML(subject.subject)}
+          </div>
+          <div style="font-size:11px;color:var(--text-sub);margin-top:1px">
+            ${escapeHTML(cls.class_name)}
+            ${subject.start_time ? ' · ' + fmtTimeRange(subject.start_time, subject.end_time) : ''}
+            ${subject.room ? ' · ' + escapeHTML(subject.room) : ''}
+          </div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <button id="attRefreshBtn"
-          style="display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;
-                 border:1.5px solid var(--border2);background:var(--surface2);
-                 color:var(--ink4);font-size:13px;font-weight:600;cursor:pointer;">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <div id="editModeBanner" class="att-edit-banner">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
+          </svg>
+          Edit mode — click any cell to toggle
+        </div>
+
+        <button id="attEditBtn" class="att-action-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
+          </svg>
+          Edit
+        </button>
+        <button id="attSaveBtn" class="att-save-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Save Changes
+        </button>
+        <button id="attCancelBtn" class="att-action-btn att-cancel-btn">Cancel</button>
+
+        <button id="attRefreshBtn" class="att-action-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+          </svg>
           Refresh
         </button>
-        <button id="attExportBtn"
-          style="display:flex;align-items:center;gap:5px;padding:7px 14px;border-radius:8px;
-                 border:none;background:var(--accent,#1E40AF);
-                 color:#fff;font-size:13px;font-weight:600;cursor:pointer;">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+
+        <button id="attExportBtn" class="att-action-btn att-export-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
           Export CSV
         </button>
       </div>
     </div>
-    <div style="flex:1;overflow-y:auto;padding:24px 28px">
-      <div id="attendanceStatsRow" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px"></div>
-      <div class="card" style="overflow:hidden">
-        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-          <h3 style="font-size:14px;font-weight:700;color:var(--ink2)">Attendance Records</h3>
-          <div style="display:flex;gap:10px;align-items:center">
-            <input id="attDateFilter" type="date" title="Filter by date"
-              style="padding:6px 12px;border-radius:6px;border:1.5px solid var(--border2);
-                     font-size:13px;outline:none;cursor:pointer;color:var(--ink3)" />
-            <input id="attSearchInput" type="text" placeholder="Search student…"
-              style="padding:6px 12px;border-radius:6px;border:1.5px solid var(--border2);
-                     font-size:13px;outline:none;width:200px" />
-          </div>
-        </div>
-        <div id="attendanceTableWrap" style="overflow-x:auto">
-          <div style="padding:32px;text-align:center;color:var(--ink5)">
-            <div style="font-size:24px;margin-bottom:8px">⏳</div>
-            Loading attendance records…
-          </div>
+
+    <!-- ── Stats row ── -->
+    <div id="attendanceStatsRow"
+         style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;
+                padding:16px 24px 0;flex-shrink:0"></div>
+
+    <!-- ── Search / filter bar ── -->
+    <div style="padding:12px 24px;display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <input id="attSearchInput" type="text" class="att-search-input"
+        placeholder="Search student…" />
+      <input id="attDateFilter" type="date" class="att-date-input" />
+    </div>
+
+    <!-- ── Excel grid ── -->
+    <div style="flex:1;overflow:auto;padding:0 24px 24px">
+      <div id="attendanceTableWrap">
+        <div style="padding:48px;text-align:center;color:var(--text-sub)">
+          <div style="font-size:22px;margin-bottom:8px">⏳</div>Loading…
         </div>
       </div>
     </div>`;
 
   panel.style.display = 'flex';
 
+  // Wire up buttons
   document.getElementById('attendanceBackBtn').addEventListener('click', closeAttendanceView);
-  document.getElementById('attRefreshBtn').addEventListener('click', () => fetchAttendanceData(cls.id, subject.id));
+  document.getElementById('attRefreshBtn').addEventListener('click', () => {
+    excelState.isEditMode = false;
+    excelState.pendingChanges = {};
+    syncEditModeUI();
+    fetchAttendanceData(cls.id, subject.id);
+  });
   document.getElementById('attExportBtn').addEventListener('click', () => exportAttendanceCSV(cls, subject));
   document.getElementById('attSearchInput').addEventListener('input', applyAttendanceFilters);
   document.getElementById('attDateFilter').addEventListener('change', applyAttendanceFilters);
+
+  document.getElementById('attEditBtn').addEventListener('click', () => {
+    excelState.isEditMode = true;
+    excelState.pendingChanges = {};
+    syncEditModeUI();
+    rerenderGrid();
+  });
+  document.getElementById('attSaveBtn').addEventListener('click', saveAttendanceChanges);
+  document.getElementById('attCancelBtn').addEventListener('click', () => {
+    excelState.isEditMode = false;
+    excelState.pendingChanges = {};
+    syncEditModeUI();
+    rerenderGrid();
+  });
 
   fetchAttendanceData(cls.id, subject.id);
 }
@@ -507,305 +1038,566 @@ function closeAttendanceView() {
   state.currentView = 'dashboard';
 }
 
+function syncEditModeUI() {
+  const editBtn   = document.getElementById('attEditBtn');
+  const saveBtn   = document.getElementById('attSaveBtn');
+  const cancelBtn = document.getElementById('attCancelBtn');
+  const banner    = document.getElementById('editModeBanner');
+  const on = excelState.isEditMode;
+  if (editBtn)   editBtn.style.display   = on ? 'none'  : 'flex';
+  if (saveBtn)   saveBtn.style.display   = on ? 'flex'  : 'none';
+  if (cancelBtn) cancelBtn.style.display = on ? 'flex'  : 'none';
+  if (banner)    banner.style.display    = on ? 'flex'  : 'none';
+}
+
 async function fetchAttendanceData(classId, subjectId) {
   const wrap = document.getElementById('attendanceTableWrap');
   const statsRow = document.getElementById('attendanceStatsRow');
   if (!wrap) return;
 
-  wrap.innerHTML = `<div style="padding:32px;text-align:center;color:var(--ink5)">Loading…</div>`;
+  wrap.innerHTML = `<div style="padding:48px;text-align:center;color:var(--text-sub)">
+    <div style="font-size:22px;margin-bottom:8px">⏳</div>Loading attendance records…
+  </div>`;
 
   try {
     const data = await apiFetch(API.subjectAttendance(classId, subjectId));
     let records = data.records || [];
 
-    // subject_id in DB is bigint; subjects use Date.now()+Math.random() as id.
-    // Cast both sides to integers for a safe match.
     const sidInt = Math.trunc(Number(subjectId));
     if (sidInt) {
       records = records.filter(r => Math.trunc(Number(r.subject_id)) === sidInt);
     }
 
+    excelState.allRecords = records;
+
     if (records.length === 0) {
-      if (statsRow) statsRow.innerHTML = '';
-      wrap.innerHTML = `
-        <div style="padding:56px 32px;text-align:center">
-          <div style="width:64px;height:64px;border-radius:16px;background:#f1f5f9;
-                      display:grid;place-items:center;margin:0 auto 16px;font-size:28px">
-            📋
-          </div>
-          <div style="font-size:15px;font-weight:700;color:var(--ink2,#1e293b);margin-bottom:6px">
-            No data saved yet
-          </div>
-          <div style="font-size:13px;color:var(--ink5,#64748b);max-width:280px;margin:0 auto;line-height:1.6">
-            Attendance records will appear here once students start checking in for this subject.
-          </div>
-          <div style="margin-top:20px;display:inline-flex;align-items:center;gap:6px;
-                      padding:8px 16px;border-radius:8px;background:#f8fafc;
-                      border:1.5px dashed #cbd5e1;font-size:12px;color:var(--ink5,#64748b)">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            Set a passcode to open attendance for this subject
-          </div>
-        </div>`;
+      buildStatsRow([]);
+      renderEmptyAttendanceTable();
       return;
     }
 
     wrap.dataset.records = JSON.stringify(records);
     applyAttendanceFilters();
-
   } catch (err) {
-    wrap.innerHTML = `<div style="padding:32px;text-align:center;color:#ef4444">Error: ${escapeHTML(err.message)}</div>`;
+    wrap.innerHTML = `<div style="padding:32px;text-align:center;color:#f87171">
+      Error: ${escapeHTML(err.message)}</div>`;
   }
 }
 
-function renderAttendanceTable(records) {
+function rerenderGrid() {
+  const wrap = document.getElementById('attendanceTableWrap');
+  if (!wrap || !wrap.dataset.records) return;
+  const records = JSON.parse(wrap.dataset.records);
+  buildStatsRow(records);
+  renderAttendanceTable(records);
+  applySearchFilter();
+}
+
+// ── Empty skeleton — same layout but with ghost rows and placeholder columns ──
+function renderEmptyAttendanceTable() {
   const wrap = document.getElementById('attendanceTableWrap');
   if (!wrap) return;
 
-  // ── Build pivot: students × dates ──────────────────────────────────────
-  // Collect unique students (keyed by email or name) and unique dates
-  const studentMap = new Map(); // email -> { name, email }
-  const dateSet = new Set();
-
-  records.forEach(r => {
-    const key   = r.student_email || r.student_name || 'unknown';
-    const dObj  = r.created_at ? new Date(r.created_at) : null;
-    const dStr  = dObj
-      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : '—';
-
-    if (!studentMap.has(key)) {
-      studentMap.set(key, { name: r.student_name || 'Unknown', email: r.student_email || key });
-    }
-    if (dStr !== '—') dateSet.add(dStr);
+  // Generate 5 placeholder date columns (today – today+4 days)
+  const today = new Date();
+  const placeholderDates = Array.from({ length: 5 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   });
 
-  // Sort dates chronologically
-  const dates = [...dateSet].sort((a, b) => new Date(a) - new Date(b));
+  // Generate 4 ghost student rows
+  const ghostStudents = [
+    { name: 'Student Name',  email: 'student@school.edu' },
+    { name: 'Student Name',  email: 'student@school.edu' },
+    { name: 'Student Name',  email: 'student@school.edu' },
+    { name: 'Student Name',  email: 'student@school.edu' },
+  ];
 
-  // Build lookup: "email|dateStr" -> status
-  const cell = {};
-  records.forEach(r => {
-    const key  = r.student_email || r.student_name || 'unknown';
-    const dObj = r.created_at ? new Date(r.created_at) : null;
-    const dStr = dObj
-      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : '—';
-    if (dStr !== '—') cell[`${key}|${dStr}`] = r.status;
-  });
-
-  const students = [...studentMap.values()].sort((a, b) =>
-    (a.name || '').localeCompare(b.name || ''));
-
-  // ── Status badge helper ─────────────────────────────────────────────────
-  const badge = (status) => {
-    if (!status) return `<span style="color:var(--ink5);font-size:12px">—</span>`;
-    const map = {
-      present: { bg:'#dcfce7', color:'#16a34a', dot:'#22c55e', label:'Present' },
-      absent:  { bg:'#fee2e2', color:'#dc2626', dot:'#ef4444', label:'Absent'  },
-      late:    { bg:'#fef9c3', color:'#ca8a04', dot:'#eab308', label:'Late'    },
-    };
-    const s = map[status] || { bg:'#f1f5f9', color:'#64748b', dot:'#94a3b8', label: status };
-    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;
-      border-radius:999px;font-size:11px;font-weight:700;background:${s.bg};color:${s.color}">
-      <span style="width:5px;height:5px;border-radius:50%;background:${s.dot};flex-shrink:0"></span>
-      ${s.label}
-    </span>`;
-  };
-
-  // ── Per-student summary ─────────────────────────────────────────────────
-  const summary = (email) => {
-    let p = 0, a = 0, l = 0;
-    dates.forEach(d => {
-      const s = cell[`${email}|${d}`];
-      if (s === 'present') p++;
-      else if (s === 'absent') a++;
-      else if (s === 'late') l++;
-    });
-    const total = p + a + l;
-    const pct = total ? Math.round((p / total) * 100) : 0;
-    const barColor = pct >= 80 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+  const colHeaders = placeholderDates.map(d => {
+    const { day, mon, year } = fmtColDate(d);
     return `
-      <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">
-        <div style="width:44px;height:5px;border-radius:99px;background:#e2e8f0;overflow:hidden;flex-shrink:0">
-          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px"></div>
+      <th class="att-th-date">
+        <div class="att-th-date-inner">
+          <div class="att-th-date-mon" style="opacity:.3">${mon}</div>
+          <div class="att-th-date-day" style="opacity:.3">${day}</div>
+          <div class="att-th-date-year" style="opacity:.3">${year}</div>
         </div>
-        <span style="font-size:11px;font-weight:700;color:${barColor}">${pct}%</span>
-        <span style="font-size:10px;color:var(--ink5)">${p}P ${a}A${l ? ' ' + l + 'L' : ''}</span>
-      </div>`;
-  };
-
-  // ── Sticky header columns ───────────────────────────────────────────────
-  const dateHeaders = dates.map(d => {
-    const parts = d.split(' ');                          // ["Apr", "5,", "2025"]
-    const mon   = parts[0] || '';
-    const day   = (parts[1] || '').replace(',', '');
-    return `<th style="padding:10px 8px;min-width:80px;text-align:center;
-      font-size:10px;font-weight:700;color:var(--ink5);text-transform:uppercase;
-      letter-spacing:.07em;border-bottom:2px solid var(--border);
-      border-right:1px solid var(--border);background:var(--surface,#fff)">
-      <div style="font-size:13px;font-weight:800;color:var(--ink2)">${day}</div>
-      <div style="font-size:10px;opacity:.6">${mon}</div>
-    </th>`;
+      </th>`;
   }).join('');
 
-  // ── Student rows ────────────────────────────────────────────────────────
-  const rows = students.map((st, idx) => {
-    const bg    = idx % 2 === 0 ? '' : 'background:var(--surface2,#f8fafc)';
-    const initL = (st.name || '?')[0].toUpperCase();
-    const cells = dates.map(d => {
-      const s = cell[`${st.email}|${d}`];
-      return `<td style="padding:8px;text-align:center;border-right:1px solid var(--border);
-        border-bottom:1px solid var(--border)">${badge(s)}</td>`;
-    }).join('');
+  const ghostRows = ghostStudents.map((st, ri) => {
+    const evenBg = ri % 2 === 0 ? 'var(--dark-900)' : 'var(--dark-800)';
+    const cells = placeholderDates.map(() => `
+      <td class="att-td-cell" style="background:${evenBg}">
+        <div class="att-cell-inner" style="background:var(--dark-800);color:var(--text-sub);height:52px">
+          —
+        </div>
+      </td>`).join('');
 
     return `
-      <tr data-search="${escapeHTML((st.name + ' ' + st.email).toLowerCase())}" style="${bg}">
-        <!-- Sticky student name column -->
-        <td style="padding:10px 16px;border-bottom:1px solid var(--border);
-          border-right:2px solid var(--border);position:sticky;left:0;
-          background:${idx % 2 === 0 ? 'var(--surface,#fff)' : 'var(--surface2,#f8fafc)'};z-index:1;
-          min-width:180px;max-width:220px">
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="width:28px;height:28px;border-radius:7px;
-              background:linear-gradient(135deg,#1E40AF,#6B8AFF);
-              display:grid;place-items:center;font-size:11px;font-weight:700;
-              color:#fff;flex-shrink:0">${initL}</div>
-            <div style="overflow:hidden">
-              <div style="font-size:13px;font-weight:600;color:var(--ink2);
-                white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(st.name)}</div>
-              <div style="font-size:11px;color:var(--ink5);white-space:nowrap;
-                overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)">${escapeHTML(st.email)}</div>
+      <tr style="background:${evenBg}">
+        <td class="att-td-student" style="background:${evenBg}">
+          <div class="att-td-student-inner">
+            <div class="att-avatar" style="background:rgba(79,172,254,.12);color:rgba(79,172,254,.12)">
+              &nbsp;
+            </div>
+            <div style="min-width:0">
+              <div style="height:11px;width:110px;border-radius:6px;
+                          background:rgba(79,172,254,.12);margin-bottom:5px"></div>
+              <div style="height:9px;width:140px;border-radius:6px;
+                          background:rgba(79,172,254,.08)"></div>
             </div>
           </div>
         </td>
-        <!-- Summary column -->
-        <td style="padding:8px 14px;border-bottom:1px solid var(--border);
-          border-right:2px solid var(--border);white-space:nowrap;
-          position:sticky;left:220px;
-          background:${idx % 2 === 0 ? 'var(--surface,#fff)' : 'var(--surface2,#f8fafc)'};z-index:1">
-          ${summary(st.email)}
+        <td class="att-td-rate" style="background:${evenBg}">
+          <div style="height:12px;width:36px;border-radius:6px;background:rgba(79,172,254,.12);margin:0 auto 6px"></div>
+          <div class="att-rate-bar-wrap"><div class="att-rate-bar-fill" style="width:0%;background:rgba(79,172,254,.12)"></div></div>
+          <div style="height:9px;width:52px;border-radius:6px;background:rgba(79,172,254,.08);margin:5px auto 0"></div>
         </td>
         ${cells}
       </tr>`;
   }).join('');
 
-  // ── Assemble ────────────────────────────────────────────────────────────
   wrap.innerHTML = `
-    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-      <table style="width:100%;border-collapse:collapse;font-size:13px" id="attTable">
+    <div class="att-legend">
+      <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:rgba(34,197,94,.15);border-color:rgba(34,197,94,.3)"></div>
+        <span>Present</span>
+      </div>
+      <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.3)"></div>
+        <span>Absent</span>
+      </div>
+      <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.3)"></div>
+        <span>Late</span>
+      </div>
+      <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:var(--dark-700);border-color:rgba(79,172,254,.12)"></div>
+        <span>—</span>
+      </div>
+    </div>
+    <div class="att-table-wrap">
+      <table id="excelTable">
         <thead>
-          <tr style="border-bottom:2px solid var(--border)">
-            <!-- Student name — sticky -->
-            <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:700;
-              color:var(--ink5);text-transform:uppercase;letter-spacing:.07em;
-              border-bottom:2px solid var(--border);border-right:2px solid var(--border);
-              position:sticky;left:0;background:var(--surface,#fff);z-index:2;min-width:180px">
-              Student
-            </th>
-            <!-- Summary — sticky -->
-            <th style="padding:11px 14px;text-align:left;font-size:11px;font-weight:700;
-              color:var(--ink5);text-transform:uppercase;letter-spacing:.07em;
-              border-bottom:2px solid var(--border);border-right:2px solid var(--border);
-              position:sticky;left:220px;background:var(--surface,#fff);z-index:2;white-space:nowrap">
-              Summary
-            </th>
-            ${dateHeaders}
+          <tr>
+            <th class="att-th-student">Student</th>
+            <th class="att-th-rate">Rate</th>
+            ${colHeaders}
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>
+          ${ghostRows}
+        </tbody>
       </table>
+    </div>
+    <div style="text-align:center;padding:20px 0 4px;font-size:12px;color:var(--text-sub);font-weight:600">
+      No attendance records yet — records will appear here once students check in.
     </div>`;
 }
 
-function applyAttendanceFilters() {
-  const wrap = document.getElementById('attendanceTableWrap');
+function buildStatsRow(records) {
   const statsRow = document.getElementById('attendanceStatsRow');
-  if (!wrap || !wrap.dataset.records) return;
-
-  let records = JSON.parse(wrap.dataset.records);
-  const dateFilter = document.getElementById('attDateFilter')?.value;
-
-  // Apply Date Filter
-  if (dateFilter) {
-    records = records.filter(r => {
-      if (!r.created_at) return false;
-      const d = new Date(r.created_at);
-      const localDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      return localDate === dateFilter;
-    });
-  }
-
-  // Recalculate Stats for filtered view
+  if (!statsRow) return;
   const total   = records.length;
   const present = records.filter(r => r.status === 'present').length;
   const absent  = records.filter(r => r.status === 'absent').length;
   const late    = records.filter(r => r.status === 'late').length;
   const rate    = total ? Math.round((present / total) * 100) : 0;
 
-  if (statsRow) {
-    statsRow.innerHTML = [
-      { label: 'Total Records',   value: total,      color: '#0EA5E9', bg: '#eff6ff' },
-      { label: 'Present',         value: present,    color: '#22c55e', bg: '#f0fdf4' },
-      { label: 'Absent',          value: absent,     color: '#ef4444', bg: '#fef2f2' },
-      { label: 'Attendance Rate', value: rate + '%', color: '#f59e0b', bg: '#fffbeb' },
-    ].map(s => `
-      <div style="background:${s.bg};border:1px solid ${s.color}22;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
-        <div style="font-size:11px;font-weight:600;color:${s.color};text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${s.label}</div>
-        <div style="font-size:26px;font-weight:700;color:${s.color};line-height:1">${s.value}</div>
-      </div>`).join('');
+  statsRow.innerHTML = [
+    { label: 'Total Records',   value: total,       color: '#e8f2ff' },
+    { label: 'Present',         value: present,     color: '#22c55e' },
+    { label: 'Absent',          value: absent,      color: '#ef4444' },
+    { label: 'Attendance Rate', value: rate + '%',  color: '#f59e0b' },
+  ].map(s => `
+    <div class="att-stat-card">
+      <div class="att-stat-label">${s.label}</div>
+      <div class="att-stat-value" style="color:${s.color}">${s.value}</div>
+    </div>`).join('');
+}
+
+function applyAttendanceFilters() {
+  const wrap = document.getElementById('attendanceTableWrap');
+  if (!wrap || !wrap.dataset.records) return;
+
+  let records = JSON.parse(wrap.dataset.records);
+  const dateFilter = document.getElementById('attDateFilter')?.value;
+
+  if (dateFilter) {
+    records = records.filter(r => {
+      const ts = r.marked_at || r.created_at;
+      if (!ts) return false;
+      const d = new Date(ts);
+      const local = d.getFullYear() + '-'
+        + String(d.getMonth() + 1).padStart(2, '0') + '-'
+        + String(d.getDate()).padStart(2, '0');
+      return local === dateFilter;
+    });
   }
+
+  buildStatsRow(records);
 
   if (records.length === 0) {
     wrap.innerHTML = `
-      <div style="padding:40px 20px;text-align:center">
+      <div style="padding:48px 20px;text-align:center">
         <div style="font-size:24px;margin-bottom:8px">📅</div>
-        <div style="font-size:14px;font-weight:600;color:var(--ink2)">No records found</div>
-        <div style="font-size:13px;color:var(--ink5)">Try adjusting your date filter or search query.</div>
+        <div style="font-size:14px;font-weight:700;color:#e8f2ff">No records for this filter</div>
+        <div style="font-size:12px;color:var(--text-sub)">Try clearing the date filter.</div>
       </div>`;
     return;
   }
 
-  // Render filtered Table
   renderAttendanceTable(records);
+  applySearchFilter();
+}
 
-  // Apply Student Name/Email Search Filter visually
-  const query = document.getElementById('attSearchInput')?.value.toLowerCase() || '';
-  document.querySelectorAll('#attTable tbody tr').forEach(row => {
+function applySearchFilter() {
+  const query = (document.getElementById('attSearchInput')?.value || '').toLowerCase();
+  document.querySelectorAll('#excelTable tbody tr').forEach(row => {
     row.style.display = row.dataset.search?.includes(query) ? '' : 'none';
   });
 }
 
+// ── Core: render the redesigned Excel-style table ─────────────────────
+function renderAttendanceTable(records) {
+  const wrap = document.getElementById('attendanceTableWrap');
+  if (!wrap) return;
+
+  // ── Build pivot ──────────────────────────────────────────────────
+  const studentMap = new Map();
+  const dateSet    = new Set();
+
+  records.forEach(r => {
+    const key  = r.student_email || r.student_name || 'unknown';
+    const ts   = r.marked_at || r.created_at;
+    const dObj = ts ? new Date(ts) : null;
+    const dStr = dObj
+      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+    if (!studentMap.has(key)) {
+      studentMap.set(key, { name: r.student_name || key, email: key });
+    }
+    if (dStr) dateSet.add(dStr);
+  });
+
+  const dates    = [...dateSet].sort((a, b) => new Date(a) - new Date(b));
+  const students = [...studentMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  // Lookup: "email|dateStr" → status
+  const lookup = {};
+  records.forEach(r => {
+    const key  = r.student_email || r.student_name || 'unknown';
+    const ts   = r.marked_at || r.created_at;
+    const dObj = ts ? new Date(ts) : null;
+    const dStr = dObj
+      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+    if (dStr) lookup[`${key}|${dStr}`] = r.status;
+  });
+
+  const isEdit = excelState.isEditMode;
+
+  // ── Column headers ───────────────────────────────────────────────
+  const colHeaders = dates.map((d, ci) => {
+    const { day, mon, year } = fmtColDate(d);
+    return `
+      <th class="att-th-date" data-col="${ci}">
+        <div class="att-th-date-inner">
+          <div class="att-th-date-mon">${mon}</div>
+          <div class="att-th-date-day">${day}</div>
+          <div class="att-th-date-year">${year}</div>
+        </div>
+      </th>`;
+  }).join('');
+
+  // ── Student rows ─────────────────────────────────────────────────
+  const rows = students.map((st, ri) => {
+    const initL = (st.name || '?')[0].toUpperCase();
+    const av    = getAvatarColor(ri);
+    const evenBg = ri % 2 === 0 ? 'var(--dark-900)' : 'var(--dark-800)';
+
+    // Compute summary
+    let p = 0, a = 0, l = 0;
+    dates.forEach(d => {
+      const key = `${st.email}|${d}`;
+      const s   = excelState.pendingChanges[key] !== undefined
+        ? excelState.pendingChanges[key]
+        : lookup[key];
+      if (s === 'present') p++;
+      else if (s === 'absent') a++;
+      else if (s === 'late') l++;
+    });
+    const total  = p + a + l;
+    const pct    = total ? Math.round((p / total) * 100) : 0;
+    const rateColor = pct >= 80 ? '#059669' : pct >= 60 ? '#d97706' : '#dc2626';
+
+    const breakdownParts = [`${p}P`, `${a}A`];
+    if (l > 0) breakdownParts.push(`${l}L`);
+
+    const rateCell = `
+      <div class="att-rate-pct" style="color:${rateColor}">${pct}%</div>
+      <div class="att-rate-bar-wrap">
+        <div class="att-rate-bar-fill" style="width:${pct}%;background:${rateColor}"></div>
+      </div>
+      <div class="att-rate-breakdown">${breakdownParts.join(' · ')}</div>`;
+
+    // Per-date cells
+    const cells = dates.map((d, ci) => {
+      const lookupKey = `${st.email}|${d}`;
+      const status = excelState.pendingChanges[lookupKey] !== undefined
+        ? excelState.pendingChanges[lookupKey]
+        : lookup[lookupKey];
+
+      const s = cellStyle(status);
+      const label = status
+        ? status.charAt(0).toUpperCase() + status.slice(1)
+        : '—';
+
+      const hasPending = excelState.pendingChanges[lookupKey] !== undefined;
+      const pendingDot = hasPending
+        ? `<span style="position:absolute;top:5px;right:5px;width:6px;height:6px;
+                        border-radius:50%;background:#f59e0b;pointer-events:none"></span>`
+        : '';
+
+      const editableClass = isEdit ? ' editable' : '';
+
+      return `
+        <td class="att-td-cell" style="background:${evenBg}">
+          <div class="att-cell-inner${editableClass}"
+            style="background:${s.bg};color:${s.color};height:52px;position:relative;"
+            ${isEdit ? `data-key="${lookupKey}" data-status="${status || ''}"` : ''}>
+            ${label}
+            ${pendingDot}
+          </div>
+        </td>`;
+    }).join('');
+
+    return `
+      <tr data-search="${escapeHTML((st.name + ' ' + st.email).toLowerCase())}"
+          style="background:${evenBg}">
+        <td class="att-td-student" style="background:${evenBg}">
+          <div class="att-td-student-inner">
+            <div class="att-avatar" style="background:${av.bg};color:${av.text}">
+              ${initL}
+            </div>
+            <div style="min-width:0">
+              <div class="att-student-name">${escapeHTML(st.name)}</div>
+              <div class="att-student-email">${escapeHTML(st.email)}</div>
+            </div>
+          </div>
+        </td>
+        <td class="att-td-rate" style="background:${evenBg}">
+          ${rateCell}
+        </td>
+        ${cells}
+      </tr>`;
+  }).join('');
+
+  // ── Legend ───────────────────────────────────────────────────────
+  const legend = `
+    <div class="att-legend">
+      <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:#d1fae5;border-color:#6ee7b7"></div>
+        <span>Present</span>
+      </div>
+      <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:#fee2e2;border-color:#fca5a5"></div>
+        <span>Absent</span>
+      </div>
+      <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:#fef9c3;border-color:#fde68a"></div>
+        <span>Late</span>
+      </div>
+      <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:#f1f5f9;border-color:#e2e8f0"></div>
+        <span>—</span>
+      </div>
+      ${isEdit ? `<div class="att-legend-item" style="margin-left:6px">
+        <span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>
+        <span>Unsaved change</span>
+      </div>` : ''}
+    </div>`;
+
+  // ── Assemble ─────────────────────────────────────────────────────
+  wrap.innerHTML = `
+    ${legend}
+    <div class="att-table-wrap">
+      <table id="excelTable">
+        <thead>
+          <tr>
+            <th class="att-th-student">Student</th>
+            <th class="att-th-rate">Rate</th>
+            ${colHeaders}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  // ── Attach click listeners for edit mode ──────────────────────────
+  if (isEdit) {
+    wrap.querySelectorAll('.att-cell-inner.editable').forEach(cell => {
+      cell.addEventListener('click', () => {
+        const key    = cell.dataset.key;
+        const cur    = excelState.pendingChanges[key] !== undefined
+          ? excelState.pendingChanges[key]
+          : (cell.dataset.status || null);
+        const next   = statusCycle(cur);
+        excelState.pendingChanges[key] = next;
+
+        const s = cellStyle(next);
+        cell.style.background = s.bg;
+        cell.style.color      = s.color;
+
+        // Clear old text/dot, set new label
+        cell.innerHTML = next.charAt(0).toUpperCase() + next.slice(1);
+
+        // Re-add pending dot
+        const dot = document.createElement('span');
+        dot.style.cssText = 'position:absolute;top:5px;right:5px;width:6px;height:6px;' +
+          'border-radius:50%;background:#f59e0b;pointer-events:none';
+        cell.appendChild(dot);
+        cell.dataset.status = next;
+
+        // Flash border
+        cell.style.outline = '2px solid #f59e0b';
+        cell.style.outlineOffset = '-2px';
+        setTimeout(() => { cell.style.outline = ''; cell.style.outlineOffset = ''; }, 500);
+      });
+    });
+  }
+}
+
+// ── Save edits back to server ─────────────────────────────────────────
+async function saveAttendanceChanges() {
+  const changes = excelState.pendingChanges;
+  if (Object.keys(changes).length === 0) {
+    showToast('No changes to save.', 'info');
+    excelState.isEditMode = false;
+    syncEditModeUI();
+    rerenderGrid();
+    return;
+  }
+
+  const saveBtn = document.getElementById('attSaveBtn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+  const updates = [];
+  for (const [key, newStatus] of Object.entries(changes)) {
+    const pipeIdx  = key.lastIndexOf('|');
+    const email    = key.slice(0, pipeIdx);
+    const dateStr  = key.slice(pipeIdx + 1);
+    updates.push({ email, dateStr, newStatus });
+  }
+
+  let saved = 0, failed = 0;
+
+  for (const upd of updates) {
+    try {
+      const matchDate = (r) => {
+        const ts = r.marked_at || r.created_at;
+        if (!ts) return false;
+        const d = new Date(ts);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) === upd.dateStr;
+      };
+      const record = excelState.allRecords.find(r =>
+        (r.student_email === upd.email || r.student_name === upd.email) && matchDate(r)
+      );
+      if (record) {
+        await apiFetch(`/api/attendance/${record.id}`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ status: upd.newStatus }),
+        });
+        record.status = upd.newStatus;
+        saved++;
+      } else {
+        failed++;
+      }
+    } catch (e) {
+      console.warn('Failed to save change:', upd, e.message);
+      failed++;
+    }
+  }
+
+  const wrap = document.getElementById('attendanceTableWrap');
+  if (wrap) wrap.dataset.records = JSON.stringify(excelState.allRecords);
+
+  excelState.isEditMode     = false;
+  excelState.pendingChanges = {};
+  syncEditModeUI();
+  rerenderGrid();
+
+  if (failed === 0) {
+    showToast(`${saved} change(s) saved!`, 'success');
+  } else {
+    showToast(`${saved} saved, ${failed} couldn't be updated (no matching record).`, 'info');
+  }
+
+  if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Changes'; }
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────
 function exportAttendanceCSV(cls, subject) {
   const wrap = document.getElementById('attendanceTableWrap');
   if (!wrap?.dataset.records) { showToast('No records to export', 'error'); return; }
-  
+
   let records = JSON.parse(wrap.dataset.records);
   const dateFilter = document.getElementById('attDateFilter')?.value;
-  
   if (dateFilter) {
     records = records.filter(r => {
-      if (!r.created_at) return false;
-      const d = new Date(r.created_at);
-      const localDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      return localDate === dateFilter;
+      const ts = r.marked_at || r.created_at;
+      if (!ts) return false;
+      const d = new Date(ts);
+      return (d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0')) === dateFilter;
     });
   }
-  
-  const header  = ['Student Name', 'Email', 'Date', 'Time', 'Status'];
-  const rows    = records.map(r => {
-    const d = r.created_at ? new Date(r.created_at) : null;
-    return [
-      r.student_name || '',
-      r.student_email || '',
-      d ? d.toLocaleDateString() : '',
-      d ? d.toLocaleTimeString() : '',
-      r.status || '',
-    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+
+  const studentMap = new Map();
+  const dateSet    = new Set();
+  records.forEach(r => {
+    const key  = r.student_email || r.student_name || 'unknown';
+    const ts   = r.marked_at || r.created_at;
+    const dObj = ts ? new Date(ts) : null;
+    const dStr = dObj
+      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+    if (!studentMap.has(key)) studentMap.set(key, { name: r.student_name || key, email: key });
+    if (dStr) dateSet.add(dStr);
   });
+  const dates    = [...dateSet].sort((a, b) => new Date(a) - new Date(b));
+  const students = [...studentMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const lookup   = {};
+  records.forEach(r => {
+    const key  = r.student_email || r.student_name || 'unknown';
+    const ts   = r.marked_at || r.created_at;
+    const dObj = ts ? new Date(ts) : null;
+    const dStr = dObj
+      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+    if (dStr) lookup[`${key}|${dStr}`] = r.status;
+  });
+
+  const header = ['Student Name', 'Email', ...dates, 'Attendance Rate'];
+  const rows   = students.map(st => {
+    let p = 0, a = 0, l = 0;
+    const cells = dates.map(d => {
+      const s = lookup[`${st.email}|${d}`] || '';
+      if (s === 'present') p++;
+      else if (s === 'absent') a++;
+      else if (s === 'late') l++;
+      return s ? s.charAt(0).toUpperCase() + s.slice(1) : '—';
+    });
+    const tot = p + a + l;
+    const pct = tot ? Math.round((p / tot) * 100) + '%' : '—';
+    return [st.name, st.email, ...cells, pct]
+      .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+  });
+
   const csv  = [header.join(','), ...rows].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const a    = document.createElement('a');
@@ -813,248 +1605,7 @@ function exportAttendanceCSV(cls, subject) {
   a.download = `${cls.class_name}_${subject.subject}_attendance.csv`.replace(/\s+/g, '_');
   a.click();
   URL.revokeObjectURL(a.href);
-}
-
-// ===========================
-// PASSCODE MODAL
-// ===========================
-
-function openPasscodeModal(classId, className) {
-  let modal = document.getElementById('passcodeModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'passcodeModal';
-    document.body.appendChild(modal);
-  }
-
-  modal.innerHTML = `
-    <div style="position:fixed;inset:0;background:rgba(15,23,42,.75);backdrop-filter:blur(4px);
-                z-index:1300;display:flex;align-items:center;justify-content:center;padding:20px">
-      <div style="background:var(--surface,#fff);border-radius:12px;padding:28px;
-                  max-width:420px;width:100%;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.15)">
-        <button id="closePasscodeModal"
-          style="position:absolute;top:16px;right:16px;border:none;background:none;
-                 font-size:20px;cursor:pointer;color:var(--ink5);line-height:1">×</button>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-          <div style="width:38px;height:38px;border-radius:10px;background:#eff6ff;
-                      display:grid;place-items:center;flex-shrink:0">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E40AF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0110 0v4"/>
-            </svg>
-          </div>
-          <div>
-            <div style="font-size:15px;font-weight:700;color:var(--ink2)">Set Attendance Passcode</div>
-            <div style="font-size:12px;color:var(--ink5)">${escapeHTML(className)}</div>
-          </div>
-        </div>
-        <div style="margin-bottom:18px">
-          <label style="display:block;font-size:12px;font-weight:600;color:var(--ink4);margin-bottom:6px">New Passcode</label>
-          <div style="position:relative">
-            <input id="passcodeInput" type="password" maxlength="20"
-              placeholder="Enter passcode for this session"
-              style="width:100%;padding:10px 40px 10px 12px;border:1.5px solid var(--border2);
-                     border-radius:8px;font-size:14px;font-family:var(--mono);outline:none;
-                     transition:border .15s,box-shadow .15s;box-sizing:border-box" />
-            <button id="togglePasscodeVisibility"
-              style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
-                     background:none;border:none;cursor:pointer;padding:4px;color:var(--ink5)">
-              <svg id="eyeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-              </svg>
-            </button>
-          </div>
-          <div style="margin-top:8px;font-size:11px;color:var(--ink5)">
-            Students will need this code to mark their attendance.
-          </div>
-        </div>
-        <div style="margin-bottom:18px">
-          <label style="display:block;font-size:12px;font-weight:600;color:var(--ink4);margin-bottom:6px">Passcode Duration <span style="color:red">*</span></label>
-          <div style="display:flex;gap:8px">
-            <input id="durationSelect" type="number" min="0" value="5"
-              style="width:80px;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;
-                     font-size:14px;outline:none;transition:border .15s,box-shadow .15s;box-sizing:border-box;
-                     background:white;color:var(--ink2);text-align:center" />
-            <span style="display:flex;align-items:center;font-size:13px;color:var(--ink4);font-weight:600">Min</span>
-            <input id="durationSeconds" type="number" min="0" max="59" value="0"
-              style="width:80px;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;
-                     font-size:14px;outline:none;transition:border .15s,box-shadow .15s;box-sizing:border-box;
-                     background:white;color:var(--ink2);text-align:center" />
-            <span style="display:flex;align-items:center;font-size:13px;color:var(--ink4);font-weight:600">Sec</span>
-          </div>
-          <div style="margin-top:8px;font-size:11px;color:var(--ink5)">
-            Passcode will expire after the selected time. Set to 0 for "Until Manually Closed".
-          </div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button id="cancelPasscodeBtn"
-            style="flex:1;padding:10px;border-radius:8px;border:1.5px solid var(--border2);
-                   background:none;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink4)">
-            Cancel
-          </button>
-          <button id="savePasscodeBtn"
-            style="flex:1;padding:10px;border-radius:8px;border:none;
-                   background:var(--accent,#1E40AF);color:#fff;
-                   font-size:13px;font-weight:600;cursor:pointer">
-            Save Passcode
-          </button>
-        </div>
-      </div>
-    </div>`;
-
-  const input      = modal.querySelector('#passcodeInput');
-  const saveBtn    = modal.querySelector('#savePasscodeBtn');
-  const cancelBtn  = modal.querySelector('#cancelPasscodeBtn');
-  const closeBtn   = modal.querySelector('#closePasscodeModal');
-  const toggleVis  = modal.querySelector('#togglePasscodeVisibility');
-  const durationSelect = modal.querySelector('#durationSelect');
-  const durationSeconds = modal.querySelector('#durationSeconds');
-
-  input.focus();
-
-  input.addEventListener('focus', () => {
-    input.style.borderColor = 'var(--accent,#1E40AF)';
-    input.style.boxShadow   = '0 0 0 3px rgba(30,64,175,.1)';
-  });
-  input.addEventListener('blur', () => {
-    input.style.borderColor = '';
-    input.style.boxShadow   = '';
-  });
-
-  durationSeconds.addEventListener('focus', () => {
-    durationSeconds.style.borderColor = 'var(--accent,#1E40AF)';
-    durationSeconds.style.boxShadow   = '0 0 0 3px rgba(30,64,175,.1)';
-  });
-  durationSeconds.addEventListener('blur', () => {
-    durationSeconds.style.borderColor = '';
-    durationSeconds.style.boxShadow   = '';
-  });
-
-  durationSelect.addEventListener('focus', () => {
-    durationSelect.style.borderColor = 'var(--accent,#1E40AF)';
-    durationSelect.style.boxShadow   = '0 0 0 3px rgba(30,64,175,.1)';
-  });
-  durationSelect.addEventListener('blur', () => {
-    durationSelect.style.borderColor = '';
-    durationSelect.style.boxShadow   = '';
-  });
-
-
-  toggleVis.addEventListener('click', () => {
-    const isPass = input.type === 'password';
-    input.type = isPass ? 'text' : 'password';
-    modal.querySelector('#eyeIcon').innerHTML = isPass
-      ? `<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>`
-      : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>`;
-  });
-
-  const close = () => modal.remove();
-  closeBtn.addEventListener('click', close);
-  cancelBtn.addEventListener('click', close);
-
-  saveBtn.addEventListener('click', async () => {
-    const passcode = input.value.trim();
-    let min = parseFloat(durationSelect.value) || 0;
-    let sec = parseFloat(durationSeconds.value) || 0;
-    
-    if (!passcode) { showToast('Please enter a passcode', 'error'); input.focus(); return; }
-    
-    if (min < 0) min = 0;
-    if (sec < 0) sec = 0;
-    let duration = min + (sec / 60);
-    
-    await withLoading(saveBtn, 'Saving…', async () => {
-      try {
-        const data = await apiFetch(API.updatePasscode(classId), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ passcode, duration }),
-        });
-        if (!data.success) throw new Error(data.error || 'Failed to save passcode');
-        
-        // Format toast message
-        let durationText = '';
-        if (duration > 0) {
-          const totalSeconds = Math.round(duration * 60);
-          if (totalSeconds >= 3600) {
-            durationText = ` Expires in ${(totalSeconds / 3600).toFixed(1)} hours.`;
-          } else if (totalSeconds >= 60) {
-            durationText = ` Expires in ${Math.round(totalSeconds / 60)} minutes.`;
-          } else {
-            durationText = ` Expires in ${totalSeconds} seconds.`;
-          }
-        }
-        showToast('Passcode saved!' + durationText, 'success');
-        
-        // Show timer in subjects wrapper if duration > 0
-        if (duration > 0) {
-          const timerSection = document.getElementById(`timer-section-${classId}`);
-          const timerDisplay = document.getElementById(`timer-display-${classId}`);
-          if (timerSection && timerDisplay) {
-            timerSection.style.display = 'flex';
-            
-            // Stop any existing timer for this class
-            if (state.activeTimers[classId]) {
-              clearInterval(state.activeTimers[classId].intervalId);
-            }
-            
-            // Start new countdown
-            let remainingMinutes = duration;
-            const formatTime = (minutes) => {
-              const m = Math.floor(minutes);
-              const s = Math.floor((minutes - m) * 60);
-              return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-            };
-            
-            state.activeTimers[classId] = {
-              intervalId: null,
-              remainingMinutes: remainingMinutes,
-              isPaused: false
-            };
-            
-            const startCountdown = () => {
-              state.activeTimers[classId].intervalId = setInterval(() => {
-                if (!state.activeTimers[classId].isPaused) {
-                  state.activeTimers[classId].remainingMinutes -= 1/60;
-                  timerDisplay.textContent = formatTime(state.activeTimers[classId].remainingMinutes);
-                  
-                  // Add pulsing as time runs out
-                  if (state.activeTimers[classId].remainingMinutes < 1) {
-                    timerDisplay.style.animation = 'pulse 1s infinite';
-                  }
-                  
-                  // Expire when time runs out
-                  if (state.activeTimers[classId].remainingMinutes <= 0) {
-                    clearInterval(state.activeTimers[classId].intervalId);
-                    timerSection.style.display = 'none';
-                    
-                    // Clear passcode from database
-                    apiFetch(API.updatePasscode(classId), {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ passcode: null, duration: 0 }),
-                    }).catch(err => console.error('Failed to clear expired passcode:', err));
-                    
-                    showToast('Passcode expired!', 'info');
-                    delete state.activeTimers[classId];
-                  }
-                }
-              }, 1000);
-            };
-            
-            startCountdown();
-          }
-        }
-        
-        close();
-      } catch (err) {
-        showToast('Error: ' + err.message, 'error');
-      }
-    });
-  });
-
-  // Allow Enter key to save
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBtn.click(); });
+  showToast('CSV exported!', 'success');
 }
 
 // Timer control functions

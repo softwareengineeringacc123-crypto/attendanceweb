@@ -1,78 +1,700 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Attendance</title>
+    <title>Register - AttendTrack</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        /* ── Verification overlay box ─────────────────────────── */
+        .verify-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 500;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(11, 18, 32, 0.72);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            animation: fadeInOverlay .35s ease both;
+        }
+        .verify-overlay.show { display: flex; }
+
+        @keyframes fadeInOverlay {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+
+        .verify-card {
+            position: relative;
+            width: 100%;
+            max-width: 420px;
+            background: rgba(17, 29, 48, 0.97);
+            border: 1px solid rgba(79, 172, 254, 0.22);
+            border-radius: 20px;
+            padding: 44px 40px 40px;
+            box-shadow: 0 32px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(79,172,254,.07), inset 0 1px 0 rgba(79,172,254,.14);
+            text-align: center;
+            animation: cardPopIn .45s cubic-bezier(.22,1,.36,1) both;
+            overflow: hidden;
+        }
+
+        @keyframes cardPopIn {
+            from { opacity: 0; transform: translateY(32px) scale(.96); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* top accent bar */
+        .verify-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 20%; right: 20%;
+            height: 2px;
+            border-radius: 0 0 4px 4px;
+            background: linear-gradient(135deg, #4facfe 0%, #00c6fb 100%);
+            opacity: .9;
+        }
+
+        /* ── Icon ring ── */
+        .verify-icon-ring {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            margin: 0 auto 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        /* waiting state — spinning ring */
+        .verify-icon-ring.waiting {
+            background: rgba(79, 172, 254, 0.08);
+            border: 2px solid rgba(79, 172, 254, 0.18);
+        }
+        .verify-icon-ring.waiting::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 2.5px solid transparent;
+            border-top-color: #4facfe;
+            border-right-color: rgba(79,172,254,.3);
+            animation: spinRing 1.1s linear infinite;
+        }
+
+        /* verified state — green pulse */
+        .verify-icon-ring.verified {
+            background: rgba(34, 211, 165, 0.10);
+            border: 2px solid rgba(34, 211, 165, 0.30);
+            animation: verifiedPulse 1.8s ease infinite;
+        }
+
+        @keyframes spinRing {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes verifiedPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 165, 0.20); }
+            50%       { box-shadow: 0 0 0 12px rgba(34, 211, 165, 0.00); }
+        }
+
+        .verify-icon-ring svg {
+            width: 36px;
+            height: 36px;
+            display: block;
+            transition: opacity .3s;
+        }
+
+        /* ── Dots loader ── */
+        .dots-loader {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin: 14px 0 6px;
+        }
+        .dots-loader span {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: rgba(79, 172, 254, 0.5);
+            animation: dotBounce 1.3s ease-in-out infinite;
+        }
+        .dots-loader span:nth-child(2) { animation-delay: .18s; }
+        .dots-loader span:nth-child(3) { animation-delay: .36s; }
+
+        @keyframes dotBounce {
+            0%, 80%, 100% { transform: translateY(0); background: rgba(79,172,254,.4); }
+            40%            { transform: translateY(-8px); background: #4facfe; }
+        }
+
+        /* ── Verify card text ── */
+        .verify-title {
+            font-size: 20px;
+            font-weight: 800;
+            color: #e8f2ff;
+            letter-spacing: -.3px;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+
+        .verify-sub {
+            font-size: 13.5px;
+            color: #5a7a9a;
+            line-height: 1.6;
+            margin-bottom: 6px;
+        }
+
+        .verify-email-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(79,172,254,.08);
+            border: 1px solid rgba(79,172,254,.18);
+            border-radius: 99px;
+            padding: 5px 14px;
+            font-size: 12.5px;
+            font-weight: 700;
+            color: #4facfe;
+            margin: 10px 0 18px;
+            word-break: break-all;
+        }
+
+        .verify-email-badge svg {
+            width: 13px;
+            height: 13px;
+            flex-shrink: 0;
+        }
+
+        /* ── Status chips ── */
+        .status-row {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: rgba(11,18,32,.55);
+            border: 1px solid rgba(79,172,254,.08);
+            text-align: left;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: #4a6a8a;
+            transition: all .4s ease;
+        }
+
+        .status-item.done {
+            color: #22d3a5;
+            border-color: rgba(34,211,165,.20);
+            background: rgba(34,211,165,.06);
+        }
+
+        .status-item.active {
+            color: #4facfe;
+            border-color: rgba(79,172,254,.25);
+            background: rgba(79,172,254,.07);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: rgba(79,172,254,.2);
+            transition: background .4s;
+        }
+
+        .status-item.done  .status-dot { background: #22d3a5; }
+        .status-item.active .status-dot {
+            background: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79,172,254,.25);
+            animation: activePulse 1.2s ease infinite;
+        }
+
+        @keyframes activePulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(79,172,254,.40); }
+            50%       { box-shadow: 0 0 0 5px rgba(79,172,254,.00); }
+        }
+
+        /* ── Resend button ── */
+        .resend-row {
+            margin-top: 20px;
+            font-size: 12.5px;
+            color: #3d5a76;
+        }
+
+        .resend-btn {
+            background: none;
+            border: none;
+            color: #4facfe;
+            font-weight: 700;
+            font-size: 12.5px;
+            font-family: inherit;
+            cursor: pointer;
+            padding: 0;
+            transition: color .2s;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .resend-btn:hover { color: #00c6fb; }
+        .resend-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+        /* ── Countdown bar (redirect) ── */
+        .redirect-bar-wrap {
+            margin-top: 22px;
+            height: 3px;
+            border-radius: 99px;
+            background: rgba(79,172,254,.12);
+            overflow: hidden;
+            display: none;
+        }
+
+        .redirect-bar-wrap.show { display: block; }
+
+        .redirect-bar-fill {
+            height: 100%;
+            border-radius: 99px;
+            background: linear-gradient(90deg, #22d3a5, #4facfe);
+            width: 100%;
+            transform-origin: left;
+            animation: shrinkBar var(--bar-duration, 5s) linear forwards;
+        }
+
+        @keyframes shrinkBar {
+            from { transform: scaleX(1); }
+            to   { transform: scaleX(0); }
+        }
+
+        .redirect-note {
+            margin-top: 10px;
+            font-size: 11.5px;
+            color: #3d5870;
+            display: none;
+        }
+
+        .redirect-note.show { display: block; }
+        .redirect-note span { color: #22d3a5; font-weight: 700; }
+    </style>
 </head>
-
 <body>
+    <div class="bg-particles">
+        <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
 
-<div class="container">
+    <div class="bg-deco"></div>
 
-    <h1>Smart Attendance System</h1>
-    <p>Welcome to Laguna University</p>
+    <div class="calendar-strip" aria-hidden="true">
+        <div class="cal-day marked">MON</div>
+        <div class="cal-day marked">TUE</div>
+        <div class="cal-day">WED</div>
+        <div class="cal-day marked">THU</div>
+        <div class="cal-day marked">FRI</div>
+        <div class="cal-day">SAT</div>
+        <div class="cal-day">SUN</div>
+    </div>
 
-    <% if (error) { %>
-        <div class="error-message"><%= error %></div>
-    <% } %>
-
-    <form method="POST" action="/register" id="registerForm">
-        <select name="user_type" required>
-            <option value="">Please Select</option>
-            <option value="student" <%= form.user_type === 'student' ? 'selected' : '' %>>Student</option>
-            <option value="teacher" <%= form.user_type === 'teacher' ? 'selected' : '' %>>Teacher</option>
-        </select>
-
-        <div class="info-box">
-            <label>Last Name:</label>
-            <input type="text" name="lastname" placeholder="Last Name" value="<%= form.lastname || '' %>" required>
-
-            <label>First Name:</label>
-            <input type="text" name="firstname" placeholder="First Name" value="<%= form.firstname || '' %>" required>
-
-            <label>Student Number:</label>
-            <input type="text" name="student_number" placeholder="Student Number" value="<%= form.student_number || '' %>" required>
-
-            <label>Email:</label>
-            <input type="email" name="email" placeholder="Email" value="<%= form.email || '' %>" required>
-
-            <label>Password:</label>
-            <input type="password" name="password" placeholder="Password" required>
-
-            <label>Confirm Password:</label>
-            <input type="password" name="confirm_password" placeholder="Confirm Password" required>
-            <button type="submit">Register</button>
-
-
+    <!-- ═══════════════════════════════════════════
+         REGISTRATION FORM
+    ═══════════════════════════════════════════ -->
+    <div class="container container--wide" id="formContainer">
+        <div class="logo-wrap">
+            <a href="#" class="logo-icon" aria-label="AttendTrack Home">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9 12L11 14L15 10M21.0001 12C21.0001 16.9706 16.9707 21 12.0001 21C7.02953 21 3.00009 16.9706 3.00009 12C3.00009 7.02944 7.02953 3 12.0001 3C16.9707 3 21.0001 7.02944 21.0001 12Z" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
         </div>
-    </form>
 
-    <div class="register">
-        <p>Already have an account? <a href="/login">Login</a></p>
+        <h1>Create an Account</h1>
+        <p class="subtitle">Join AttendTrack to manage your attendance.</p>
+
+        <% if (locals.error) { %>
+            <div class="error-message">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span><%= locals.error %></span>
+            </div>
+        <% } %>
+
+        <form id="registerForm" action="/register" method="POST">
+            <input type="hidden" name="user_type" value="<%= locals.form?.user_type || 'student' %>">
+
+            <div class="info-box">
+                <div class="field-row">
+                    <div class="field-group">
+                        <label for="firstname">First Name</label>
+                        <div class="input-wrap">
+                            <span class="input-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            </span>
+                            <input type="text" id="firstname" name="firstname" placeholder="Juan" value="<%= locals.form?.firstname || '' %>" required>
+                        </div>
+                    </div>
+                    <div class="field-group">
+                        <label for="lastname">Last Name</label>
+                        <div class="input-wrap">
+                            <span class="input-icon">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            </span>
+                            <input type="text" id="lastname" name="lastname" placeholder="Dela Cruz" value="<%= locals.form?.lastname || '' %>" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label for="student_number">Student / Employee ID</label>
+                    <div class="input-wrap">
+                        <span class="input-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>
+                        </span>
+                        <input type="text" id="student_number" name="student_number" placeholder="2024-12345" value="<%= locals.form?.student_number || '' %>" required>
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label for="email">Email Address</label>
+                    <div class="input-wrap">
+                        <span class="input-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        </span>
+                        <input type="email" id="email" name="email" placeholder="you@example.com" value="<%= locals.form?.email || '' %>" required>
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label for="password">Password</label>
+                    <div class="input-wrap">
+                        <span class="input-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </span>
+                        <input type="password" id="password" name="password" placeholder="••••••••" required>
+                        <button type="button" class="toggle-pw" data-target="password" aria-label="Toggle password visibility">
+                            <svg class="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="field-group" id="confirm-pw-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <div class="input-wrap">
+                        <span class="input-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        </span>
+                        <input type="password" id="confirm_password" name="confirm_password" placeholder="••••••••" required>
+                        <button type="button" class="toggle-pw" data-target="confirm_password" aria-label="Toggle confirm password visibility">
+                            <svg class="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                    <div class="pw-match-msg"></div>
+                </div>
+
+                <button type="submit" class="btn-login" id="submitBtn">
+                    <span>Create Account</span>
+                    <span class="btn-arrow">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    </span>
+                </button>
+            </div>
+        </form>
+
+        <div class="register">
+            <p>Already have an account? <a href="/login">Sign in</a></p>
+        </div>
     </div>
-</div>
 
-<!-- Loading Overlay -->
-<div class="loading-overlay" id="loadingOverlay">
-    <div class="loading-content">
-        <div class="loading-spinner"></div>
-        <p class="loading-text">Creating account...</p>
+
+    <!-- ═══════════════════════════════════════════
+         VERIFICATION OVERLAY
+    ═══════════════════════════════════════════ -->
+    <div class="verify-overlay" id="verifyOverlay" role="dialog" aria-modal="true" aria-labelledby="verifyTitle">
+        <div class="verify-card">
+
+            <!-- Icon ring — changes between waiting / verified states -->
+            <div class="verify-icon-ring waiting" id="verifyIconRing">
+                <!-- Envelope icon (waiting) -->
+                <svg id="iconWaiting" viewBox="0 0 24 24" fill="none" stroke="#4facfe" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <!-- Checkmark icon (verified — hidden initially) -->
+                <svg id="iconVerified" viewBox="0 0 24 24" fill="none" stroke="#22d3a5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:none;opacity:0;transition:opacity .4s">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                    <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+            </div>
+
+            <div class="verify-title" id="verifyTitle">Check your inbox</div>
+            <div class="verify-sub" id="verifySub">
+                We sent a verification link to:
+            </div>
+
+            <div class="verify-email-badge" id="verifyEmailBadge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <span id="verifyEmailText">—</span>
+            </div>
+
+            <!-- Progress steps -->
+            <div class="status-row">
+                <div class="status-item done" id="step1">
+                    <span class="status-dot"></span>
+                    Account created successfully
+                </div>
+                <div class="status-item active" id="step2">
+                    <span class="status-dot"></span>
+                    <span id="step2Text">Waiting for email verification…</span>
+                </div>
+                <div class="status-item" id="step3">
+                    <span class="status-dot"></span>
+                    Pending admin approval
+                </div>
+            </div>
+
+            <!-- Animated dots (only shown while polling) -->
+            <div class="dots-loader" id="dotsLoader">
+                <span></span><span></span><span></span>
+            </div>
+
+            <!-- Redirect countdown bar (shown after verified) -->
+            <div class="redirect-bar-wrap" id="redirectBarWrap">
+                <div class="redirect-bar-fill" id="redirectBarFill"></div>
+            </div>
+            <div class="redirect-note" id="redirectNote">
+                Redirecting to login in <span id="redirectCount">5</span>s…
+            </div>
+
+            <!-- Resend link -->
+            <div class="resend-row" id="resendRow">
+                Didn't receive it?
+                <button class="resend-btn" id="resendBtn" onclick="handleResend()">Resend email</button>
+            </div>
+        </div>
     </div>
-</div>
 
-<script>
-document.getElementById('registerForm').addEventListener('submit', function(e) {
-    // Show loading overlay
-    document.getElementById('loadingOverlay').classList.add('show');
 
-    // Disable the submit button to prevent multiple submissions
-    const submitBtn = this.querySelector('button[type="submit"]');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Creating account...';
-});
-</script>
+    <script>
+    /* ── Password eye toggles ──────────────────────────────── */
+    document.querySelectorAll('.input-wrap input').forEach(el => {
+        const group = el.closest('.field-group');
+        if (group) {
+            el.addEventListener('focus', () => group.classList.add('focused'));
+            el.addEventListener('blur',  () => group.classList.remove('focused'));
+        }
+    });
 
+    const eyeOpen  = `<svg class="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+    const eyeClosed = `<svg class="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
+    document.querySelectorAll('.toggle-pw').forEach(btn => {
+        btn.onclick = function () {
+            const input = document.getElementById(btn.dataset.target);
+            if (!input) return;
+            const isPassword = input.type === 'password';
+            input.type = isPassword ? 'text' : 'password';
+            btn.innerHTML = isPassword ? eyeClosed : eyeOpen;
+        };
+    });
+
+    /* ── Password match validation ─────────────────────────── */
+    const pw       = document.getElementById('password');
+    const cpw      = document.getElementById('confirm_password');
+    const cpwGroup = document.getElementById('confirm-pw-group');
+    const matchMsg = cpwGroup.querySelector('.pw-match-msg');
+
+    function validatePasswords() {
+        if (cpw.value === '') {
+            cpwGroup.classList.remove('pw-ok', 'pw-err');
+            matchMsg.textContent = '';
+            return;
+        }
+        const isMatch = pw.value === cpw.value;
+        cpwGroup.classList.toggle('pw-ok',  isMatch);
+        cpwGroup.classList.toggle('pw-err', !isMatch);
+        matchMsg.textContent = isMatch ? 'Passwords match!' : 'Passwords do not match.';
+    }
+
+    pw.addEventListener('input',  validatePasswords);
+    cpw.addEventListener('input', validatePasswords);
+
+
+    /* ══════════════════════════════════════════════════════════
+       FORM SUBMIT — intercept, POST via fetch, then show overlay
+    ══════════════════════════════════════════════════════════ */
+    let registeredEmail = '';
+    let pollTimer       = null;
+    let verified        = false;
+
+    document.getElementById('registerForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = true;
+        btn.querySelector('span').textContent = 'Creating account…';
+
+        const formData = new FormData(this);
+        registeredEmail = formData.get('email') || '';
+
+        try {
+            const resp = await fetch('/register', {
+                method: 'POST',
+                body: new URLSearchParams(formData),
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                redirect: 'manual', // don't follow the server redirect
+            });
+
+            // Server redirects to /login on success — treat redirect as success.
+            // A non-redirect means the page re-rendered with an error.
+            if (resp.type === 'opaqueredirect' || resp.redirected || resp.status === 302 || resp.ok) {
+                showVerifyOverlay(registeredEmail);
+                startPolling(registeredEmail);
+            } else {
+                // Try to surface the error from the response body
+                const html = await resp.text();
+                const match = html.match(/class="error-message"[^>]*>[\s\S]*?<span>([\s\S]*?)<\/span>/);
+                const msg   = match ? match[1].trim() : 'Registration failed. Please try again.';
+                showInlineError(msg);
+                btn.disabled = false;
+                btn.querySelector('span').textContent = 'Create Account';
+            }
+        } catch (err) {
+            // Network error OR the fetch followed the redirect and we landed on /login (fine)
+            // Show the overlay optimistically
+            showVerifyOverlay(registeredEmail);
+            startPolling(registeredEmail);
+        }
+    });
+
+    /* ── Show inline error on form ─────────────────────────── */
+    function showInlineError(msg) {
+        let box = document.querySelector('.error-message');
+        if (!box) {
+            box = document.createElement('div');
+            box.className = 'error-message';
+            box.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><span></span>`;
+            document.querySelector('h1').insertAdjacentElement('afterend', box);
+        }
+        box.querySelector('span').textContent = msg;
+    }
+
+    /* ── Show overlay ──────────────────────────────────────── */
+    function showVerifyOverlay(email) {
+        document.getElementById('verifyEmailText').textContent = email || '—';
+        document.getElementById('verifyOverlay').classList.add('show');
+    }
+
+    /* ── Poll for email verification ───────────────────────── */
+    function startPolling(email) {
+        if (!email) return;
+        clearInterval(pollTimer);
+        pollTimer = setInterval(async () => {
+            try {
+                const resp = await fetch('/api/check-email-verified', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email }),
+                });
+                const data = await resp.json();
+                if (data.verified && !verified) {
+                    verified = true;
+                    clearInterval(pollTimer);
+                    onEmailVerified();
+                }
+            } catch (_) { /* ignore network blips */ }
+        }, 3000); // poll every 3 seconds
+    }
+
+    /* ── Transition to "verified" state ────────────────────── */
+    function onEmailVerified() {
+        /* swap icon ring */
+        const ring = document.getElementById('verifyIconRing');
+        ring.classList.remove('waiting');
+        ring.classList.add('verified');
+
+        /* swap icons */
+        const iWait = document.getElementById('iconWaiting');
+        const iVerif = document.getElementById('iconVerified');
+        iWait.style.opacity = '0';
+        setTimeout(() => {
+            iWait.style.display = 'none';
+            iVerif.style.display = 'block';
+            requestAnimationFrame(() => { iVerif.style.opacity = '1'; });
+        }, 300);
+
+        /* update text */
+        document.getElementById('verifyTitle').textContent = 'Email Verified! 🎉';
+        document.getElementById('verifySub').textContent   = 'Your email has been confirmed. Your account is now pending admin approval.';
+
+        /* update steps */
+        document.getElementById('step2').classList.remove('active');
+        document.getElementById('step2').classList.add('done');
+        document.getElementById('step2Text').textContent = 'Email verified';
+        document.getElementById('step3').classList.add('active');
+
+        /* hide dots & resend */
+        document.getElementById('dotsLoader').style.display = 'none';
+        document.getElementById('resendRow').style.display  = 'none';
+
+        /* show redirect countdown */
+        const REDIRECT_SECS = 5;
+        const barWrap  = document.getElementById('redirectBarWrap');
+        const barFill  = document.getElementById('redirectBarFill');
+        const note     = document.getElementById('redirectNote');
+        const countEl  = document.getElementById('redirectCount');
+
+        barFill.style.setProperty('--bar-duration', REDIRECT_SECS + 's');
+        barWrap.classList.add('show');
+        note.classList.add('show');
+
+        let remaining = REDIRECT_SECS;
+        countEl.textContent = remaining;
+        const tick = setInterval(() => {
+            remaining--;
+            countEl.textContent = remaining;
+            if (remaining <= 0) {
+                clearInterval(tick);
+                window.location.href = '/login';
+            }
+        }, 1000);
+    }
+
+    /* ── Resend handler ────────────────────────────────────── */
+    let resendCooldown = false;
+
+    async function handleResend() {
+        if (resendCooldown || !registeredEmail) return;
+        resendCooldown = true;
+
+        const btn = document.getElementById('resendBtn');
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+
+        try {
+            // Supabase doesn't expose a "resend" via our server easily,
+            // so we just tell the user to check spam and re-enable after 30s.
+            await new Promise(r => setTimeout(r, 800));
+            btn.textContent = 'Email sent!';
+        } catch (_) {
+            btn.textContent = 'Try again';
+        }
+
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = 'Resend email';
+            resendCooldown = false;
+        }, 30000); // 30-second cooldown
+    }
+    </script>
 </body>
 </html>

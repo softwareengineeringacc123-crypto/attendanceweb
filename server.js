@@ -109,16 +109,24 @@
       student_number: userMetadata.student_number,
     };
 
-    if (req.session.user.role === 'teacher') {
-      return res.redirect('/teacherdashboard');
+    if (req.session.user.role === 'admin') {
+      return res.redirect('/admin');
     }
-    if (req.session.user.role === 'student') {
-      return res.redirect('/studentdashboard');
+ 
+    // Students & teachers must be approved by admin before they can log in
+    const registrationStatus = userMetadata.registration_status;
+ 
+    if (registrationStatus !== 'approved') {
+      req.session.destroy(() => {});
+      const reason = registrationStatus === 'declined'
+        ? 'Your registration was declined by the administrator. Please contact support.'
+        : 'Your account is pending administrator approval. You will be notified once approved.';
+      return res.render('login', { error: reason, email });
     }
-    if (req.session.user.role === 'admin') {        
-    return res.redirect('/admin');
-    }
-
+ 
+    if (req.session.user.role === 'teacher') return res.redirect('/teacherdashboard');
+    if (req.session.user.role === 'student') return res.redirect('/studentdashboard');
+ 
     return res.render('login', { error: 'User role not found.', email });
   });
 
@@ -164,8 +172,52 @@
       });
     }
 
-    return res.redirect('/login');
+      return res.redirect('/login');
   });
+ app.post('/api/check-email-verified', requireSupabase, async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.json({ verified: false });
+    try {
+        const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
+        const user = users.find(u => u.email === email);
+        res.json({ verified: !!(user && user.email_confirmed_at) });
+    } catch {
+        res.json({ verified: false });
+    }
+});
+// Supabase email confirmation callback
+app.get('/auth/confirm', requireSupabase, async (req, res) => {
+  const token_hash = req.query.token_hash;
+  const type       = req.query.type;        // usually 'email'
+  const next       = req.query.next || '/login';
+
+  if (!token_hash || !type) {
+    return res.redirect('/login?error=invalid_confirmation_link');
+  }
+
+  try {
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash,
+      type,
+    });
+
+    if (error) {
+      console.error('[AUTH CONFIRM] OTP error:', error.message);
+      return res.redirect('/login?error=' + encodeURIComponent(error.message));
+    }
+
+    // Confirmed — send them back to register page so the poll catches it
+    // and shows the "Email Verified" state
+    return res.redirect('/register?confirmed=1');
+  } catch (err) {
+    console.error('[AUTH CONFIRM] Unexpected error:', err.message);
+    return res.redirect('/login?error=confirmation_failed');
+  }
+});
+ 
+// Supabase clicks the confirmation link → lands here →
+// shows "email confirmed, waiting for admin approval" page
+
 // Add this route
   app.get('/admin', requireLogin, requireSupabase, async (req, res) => {
   if (req.session.user.role !== 'admin') {
@@ -280,7 +332,67 @@ app.get('/api/admin/users', requireLogin, requireAdmin, requireSupabase, async (
     res.status(500).json({ error: err.message });
   }
 });
+app.get('/api/admin/registrations', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
+  try {
+    const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
+    if (error) return res.status(500).json({ error: error.message });
+ 
+    const pending = users
+      .filter(u => {
+        const meta   = u.user_metadata || {};
+        const status = meta.registration_status;
+        return (
+          (meta.role === 'student' || meta.role === 'teacher') &&
+          u.email_confirmed_at &&
+          status !== 'approved' &&
+          status !== 'declined'
+        );
+      })
+      .map(u => ({
+        id:         u.id,
+        fullname:   u.user_metadata?.name    || u.email,
+        email:      u.email,
+        role:       u.user_metadata?.role    || 'student',
+        course:     u.user_metadata?.course  || '',
+        section:    u.user_metadata?.section || '',
+        created_at: u.created_at,
+      }));
+ 
+    res.json(pending);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+ 
+// Approve a registration
+app.post('/api/admin/accept-registration/:userId', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
+  try {
+    const { data: { user }, error: fetchErr } = await supabaseAdmin.auth.admin.getUserById(req.params.userId);
+    if (fetchErr || !user) return res.status(404).json({ error: 'User not found' });
+ 
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(req.params.userId, {
+      user_metadata: { ...user.user_metadata, registration_status: 'approved' },
+    });
+    if (error) throw error;
+ 
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+ 
+// Decline a registration
+// Decline a registration — DELETES the user entirely
+app.post('/api/admin/decline-registration/:userId', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(req.params.userId);
+    if (error) throw error;
 
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
   // ── API endpoints ─────────────────────────────────────────────────────────────
 
   app.post('/api/add-class', requireLogin, requireSupabase, async (req, res) => {
@@ -574,6 +686,59 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
     }
   });
 
+
+// PATCH /api/attendance/:recordId  — update status of an attendance record
+app.patch('/api/attendance/:recordId', requireLogin, requireSupabase, async (req, res) => {
+  if (req.session.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { recordId } = req.params;
+  const { status }   = req.body;
+
+  const allowed = ['present', 'absent', 'late'];
+  if (!allowed.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status. Must be present, absent, or late.' });
+  }
+
+  try {
+    // Verify the record belongs to a class owned by this teacher
+    const { data: record, error: recErr } = await supabase
+      .from('attendance')
+      .select('id, class_id')
+      .eq('id', recordId)
+      .single();
+
+    if (recErr || !record) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+
+    // Confirm teacher owns the class
+    const { data: cls, error: clsErr } = await supabase
+      .from('classes')
+      .select('id')
+      .eq('id', record.class_id)
+      .eq('teacher_id', req.session.user.id)
+      .single();
+
+    if (clsErr || !cls) {
+      return res.status(403).json({ error: 'Not authorized to edit this record' });
+    }
+
+    // Perform the update
+    const { error: updateErr } = await (supabaseAdmin || supabase)
+      .from('attendance')
+      .update({ status })
+      .eq('id', recordId);
+
+    if (updateErr) throw updateErr;
+
+    res.json({ success: true, id: recordId, status });
+  } catch (err) {
+    console.error('[ATTENDANCE PATCH] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
   // ── Data fetching endpoints ───────────────────────────────────────────────────
 
   app.get('/api/user-profile', requireLogin, requireSupabase, async (req, res) => {
@@ -885,9 +1050,9 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
       // which causes a Postgres bigint cast error.
       const { data: allAttendance, error: attError } = await supabase
         .from('attendance')
-        .select('id, student_name, student_email, status, created_at, class_id, subject_id')
+        .select('id, student_name, student_email, status, marked_at, class_id, subject_id')
         .eq('class_id', classId)
-        .order('created_at', { ascending: false });
+        .order('marked_at', { ascending: false });
 
       if (attError) throw attError;
 
@@ -1385,6 +1550,76 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
     res.json({ success: true, status });
   } catch (err) {
     console.error('[SUBMIT ATTENDANCE] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+// GET /api/admin/classes — all classes with subjects (admin only)
+app.get('/api/admin/classes', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
+  try {
+    const { data: classes, error } = await supabaseAdmin
+      .from('classes')
+      .select('id, class_name, teacher_id, subjects')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const normalized = (classes || []).map(cls => ({
+      ...cls,
+      subjects: (cls.subjects || []).map(s => ({
+        ...s,
+        id: Math.trunc(Number(s.id))
+      }))
+    }));
+
+    res.json({ classes: normalized });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/attendance-logs — all attendance records (admin only)
+app.get('/api/admin/attendance-logs', requireLogin, requireAdmin, requireSupabase, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('attendance')
+      .select('id, student_name, student_email, status, created_at, date, time, class_id, subject_id, room')
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+
+    // Enrich with class/subject names
+    const classIds = [...new Set((data || []).map(r => r.class_id).filter(Boolean))];
+    let classMap = {};
+
+    if (classIds.length > 0) {
+      const { data: classes } = await supabaseAdmin
+        .from('classes')
+        .select('id, class_name, subjects')
+        .in('id', classIds);
+
+      (classes || []).forEach(cls => { classMap[cls.id] = cls; });
+    }
+
+    const logs = (data || []).map(r => {
+      const cls = classMap[r.class_id];
+      const subj = (cls?.subjects || []).find(
+        s => Math.trunc(Number(s.id)) === Math.trunc(Number(r.subject_id))
+      );
+      return {
+        id:           r.id,
+        date:         r.date || r.created_at,
+        student_name: r.student_name || r.student_email || 'Unknown',
+        time:         r.time || '—',
+        subject:      subj?.subject || cls?.class_name || 'Unknown Subject',
+        period:       subj?.days    || '—',
+        status:       r.status ? r.status.charAt(0).toUpperCase() + r.status.slice(1) : 'Unknown',
+        room:         r.room  || '—',
+      };
+    });
+
+    res.json(logs);
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
