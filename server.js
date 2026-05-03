@@ -76,12 +76,29 @@
   }
 
   app.get('/', (req, res) => {
-    return res.redirect('/login');
-  });
+  if (req.session.user) {
+    return redirectByRole(req, res);
+  }
+  return res.redirect('/login');
+});
 
-  app.get('/login', (req, res) => {
-    res.render('login', { error: null, email: '' });
-  });
+  // Login page — redirect away if already logged in
+app.get('/login', (req, res) => {
+  if (req.session.user) {
+    return redirectByRole(req, res);
+  }
+  res.render('login', { error: null, email: '' });
+});
+ 
+// ── Helper: redirect to the right dashboard based on role ──────────────
+function redirectByRole(req, res) {
+  const role = req.session.user?.role;
+  if (role === 'admin')   return res.redirect('/admin');
+  if (role === 'teacher') return res.redirect('/teacherdashboard');
+  if (role === 'student') return res.redirect('/studentdashboard');
+  // Unknown role — clear session and go to login
+  req.session.destroy(() => res.redirect('/login'));
+}
 
   app.post('/login', requireSupabase, async (req, res) => {
     const { email, password } = req.body;
