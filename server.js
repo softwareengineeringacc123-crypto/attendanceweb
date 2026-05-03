@@ -6,10 +6,11 @@
   import dotenv from 'dotenv';
   import { createClient } from '@supabase/supabase-js';
 
-  dotenv.config();
-
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
+  
+  dotenv.config({ path: path.join(__dirname, '.env') });
+
   const app = express();
 
   app.set('view engine', 'ejs');
@@ -34,6 +35,16 @@
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  console.log('--- SUPABASE CONFIGURATION DEBUG ---');
+  console.log('Looking for .env file at:', path.join(__dirname, '.env'));
+  console.log('SUPABASE_URL:', supabaseUrl ? 'Set (starts with ' + supabaseUrl.substring(0, 8) + ')' : 'Not Set');
+  console.log('SUPABASE_KEY:', supabaseKey ? 'Set (length: ' + supabaseKey.length + ')' : 'Not Set');
+  if (supabaseKey && supabaseKey.includes('your-supabase-key')) {
+    console.log('ERROR: SUPABASE_KEY still contains the placeholder text "your-supabase-key".');
+  }
+  console.log('------------------------------------');
+
   const isSupabaseConfigured = typeof supabaseUrl === 'string' && /https?:\/\//i.test(supabaseUrl) && typeof supabaseKey === 'string' && supabaseKey.length > 0 && !supabaseKey.includes('your-supabase-key');
   const supabase = isSupabaseConfigured ? createClient(supabaseUrl, supabaseKey) : null;
   // Admin client uses service role key to bypass RLS
@@ -112,7 +123,7 @@
   });
 
   app.get('/register', (req, res) => {
-    res.render('register', { error: null, form: {} });
+    res.render('register', { error: null, form: { user_type: req.query.type || '' } });
   });
 
   app.post('/register', requireSupabase, async (req, res) => {
@@ -674,7 +685,9 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
 
   app.get('/api/notifications', requireLogin, requireSupabase, async (req, res) => {
     try {
-      const { data: attendance, error: attendanceError } = await supabase
+      const client = supabaseAdmin || supabase;
+
+      const { data: attendance, error: attendanceError } = await client
         .from('attendance')
         .select('status')
         .eq('student_id', req.session.user.id);
@@ -682,15 +695,17 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
       if (attendanceError) throw attendanceError;
 
       const notifications = [];
+      let notifId = 1;
       const totalRecords = attendance.length;
       const absentCount = attendance.filter(a => a.status === 'absent').length;
       const attendanceRate = totalRecords
         ? Math.round((attendance.filter(a => a.status === 'present').length / totalRecords) * 100)
         : 0;
 
-      if (attendanceRate < 80) {
+      // Only show warning if they actually have attendance records
+      if (totalRecords > 0 && attendanceRate < 80) {
         notifications.push({
-          id: 1,
+          id: notifId++,
           title: 'Attendance Warning',
           text: `Your attendance is currently at ${attendanceRate}%. Please attend your classes.`,
           time: 'Today',
@@ -702,7 +717,7 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
 
       if (absentCount > 5) {
         notifications.push({
-          id: 2,
+          id: notifId++,
           title: 'High Absence Count',
           text: `You have ${absentCount} absences. Consider contacting your instructor.`,
           time: 'Today',
@@ -710,6 +725,87 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
           color: 'var(--red)',
           bg: 'var(--red-pale)',
         });
+      }
+
+      // Pending enrollments & Today's Schedule
+      const { data: enrollments } = await client
+        .from('student_enrollments')
+        .select('class_id, subject_id, status')
+        .eq('student_id', req.session.user.id);
+
+      if (enrollments) {
+        const pendingCount = enrollments.filter(e => e.status === 'pending').length;
+        if (pendingCount > 0) {
+          notifications.push({
+            id: notifId++,
+            title: 'Pending Approvals',
+            text: `You have ${pendingCount} subject request(s) waiting for teacher approval.`,
+            time: 'Just now',
+            unread: true,
+            color: '#8B5CF6', 
+            bg: 'rgba(139, 92, 246, 0.1)' // Purple theme for pending
+          });
+        }
+
+        const approved = enrollments.filter(e => e.status === 'approved');
+        if (approved.length > 0) {
+          const classIds = [...new Set(approved.map(e => e.class_id))];
+          const { data: classes } = await client
+            .from('classes')
+            .select('id, subjects')
+            .in('id', classIds);
+
+          if (classes) {
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const todayStr = dayNames[new Date().getDay()];
+            let todayCount = 0;
+            const approvedSubjectNames = [];
+
+            classes.forEach(cls => {
+              const enrolledSubjectIds = approved
+                .filter(e => e.class_id === cls.id)
+                .map(e => Math.trunc(Number(e.subject_id)));
+              
+              (cls.subjects || []).forEach(sub => {
+                if (enrolledSubjectIds.includes(Math.trunc(Number(sub.id)))) {
+                  approvedSubjectNames.push(sub.subject || 'Unknown Subject');
+                  const daysArr = Array.isArray(sub.days) ? sub.days : (sub.days ? sub.days.split(',').map(d => d.trim()) : []);
+                  if (daysArr.includes(todayStr)) {
+                    todayCount++;
+                  }
+                }
+              });
+            });
+
+            if (todayCount > 0) {
+              notifications.push({
+                id: notifId++,
+                title: "Today's Schedule",
+                text: `You have ${todayCount} class${todayCount > 1 ? 'es' : ''} scheduled for today. Have a great day!`,
+                time: 'Today',
+                unread: false,
+                color: '#4361EE',
+                bg: 'rgba(67, 97, 238, 0.1)' // Blue theme for schedule
+              });
+            }
+
+            if (approvedSubjectNames.length > 0) {
+              const subjList = approvedSubjectNames.length > 2 
+                ? `${approvedSubjectNames[0]}, ${approvedSubjectNames[1]} and ${approvedSubjectNames.length - 2} other(s)`
+                : approvedSubjectNames.join(' and ');
+
+              notifications.push({
+                id: notifId++,
+                title: 'Enrollment Approved',
+                text: `You have been accepted to ${subjList}.`,
+                time: 'Active',
+                unread: false,
+                color: '#10B981', // Green theme for accepted enrollment
+                bg: 'rgba(16, 185, 129, 0.1)' 
+              });
+            }
+          }
+        }
       }
 
       res.json({ notifications });
@@ -821,7 +917,8 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
   }
 
   try {
-    const { data: allClasses, error: classError } = await supabase
+    const client = supabaseAdmin || supabase;
+    const { data: allClasses, error: classError } = await client
       .from('classes')
       .select('id, class_name, teacher_id, subjects')
       .order('created_at', { ascending: false });
@@ -834,7 +931,8 @@ const teacherIds = [...new Set((allClasses || []).map(c => c.teacher_id).filter(
 let teacherMap = {};
 
 if (teacherIds.length > 0) {
-  const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
+  const adminClient = supabaseAdmin || supabase;
+  const { data: { users }, error: usersError } = adminClient.auth.admin ? await adminClient.auth.admin.listUsers() : { data: { users: [] }, error: null };
   
   // TEMP DEBUG — remove after confirming
   console.log('[TEACHER LOOKUP] usersError:', usersError);
@@ -916,12 +1014,16 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
   }
 
   try {
-    const { error } = await supabase
+    const client = supabaseAdmin || supabase;
+    const cleanSubjectId = Math.trunc(Number(subjectId));
+    const cleanClassId = Math.trunc(Number(classId));
+
+    const { error } = await client
       .from('student_enrollments')
       .delete()
       .eq('student_id', req.session.user.id)
-      .eq('class_id', classId)
-      .eq('subject_id', subjectId);
+      .eq('class_id', cleanClassId)
+      .eq('subject_id', cleanSubjectId);
 
     if (error) throw error;
 
@@ -942,13 +1044,17 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
     }
 
     try {
+      const client = supabaseAdmin || supabase;
+      const cleanSubjectId = Math.trunc(Number(subjectId));
+      const cleanClassId = Math.trunc(Number(classId));
+
       // Check if student is already enrolled
-      const { data: existing, error: existingError } = await supabase
+      const { data: existing, error: existingError } = await client
         .from('student_enrollments')
         .select('id, status')
         .eq('student_id', req.session.user.id)
-        .eq('class_id', classId)
-        .eq('subject_id', subjectId)
+        .eq('class_id', cleanClassId)
+        .eq('subject_id', cleanSubjectId)
         .maybeSingle();
 
       if (existing) {
@@ -959,21 +1065,21 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
       }
 
       // Insert enrollment record
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from('student_enrollments')
         .insert({
           student_id: req.session.user.id,
           student_email: req.session.user.email,
-          student_name: req.session.user.name,
-          class_id: classId,
-          subject_id: subjectId,
+          student_name: req.session.user.name || 'Student',
+          class_id: cleanClassId,
+          subject_id: cleanSubjectId,
           status: 'pending'
         })
         .select();
 
       if (error) throw error;
 
-      res.json({ success: true, enrollment: data[0] });
+      res.json({ success: true });
     } catch (err) {
       console.error('[ENROLL] Error:', err.message);
       res.status(500).json({ error: err.message });
@@ -986,24 +1092,28 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
     }
 
     try {
+      const client = supabaseAdmin || supabase;
+
       // Get all student enrollments with class info
-      const { data: enrollments, error: enrollError } = await supabase
+      const { data: allEnrollments, error: enrollError } = await client
         .from('student_enrollments')
         .select('class_id, subject_id, status')
-        .eq('student_id', req.session.user.id)
-        .eq('status', 'approved');
+        .eq('student_id', req.session.user.id);
 
       if (enrollError) throw enrollError;
 
-      if (!enrollments || enrollments.length === 0) {
-        return res.json({ subjects: [], classes: {} });
+      if (!allEnrollments || allEnrollments.length === 0) {  
+        return res.json({ subjects: [], classes: {}, pending: [] });
       }
+      
+      const enrollments = allEnrollments.filter(e => e.status === 'approved');
+      const pendingList = allEnrollments.filter(e => e.status === 'pending').map(e => ({ classId: e.class_id, subjectId: e.subject_id }));
 
       // Get unique class IDs
       const classIds = [...new Set(enrollments.map(e => e.class_id))];
 
       // Fetch all classes
-      const { data: classes, error: classError } = await supabase
+      const { data: classes, error: classError } = await client
         .from('classes')
         .select('id, class_name, subjects')
         .in('id', classIds);
@@ -1013,7 +1123,6 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
       // Build response with subject details
       const classMap = {};
       const subjects = [];
-
       if (classes && Array.isArray(classes)) {
         for (const cls of classes) {
           classMap[cls.id] = { id: cls.id, name: cls.class_name };
@@ -1048,7 +1157,7 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
         }
       }
 
-      res.json({ subjects, classes: classMap });
+      res.json({ subjects, classes: classMap, pending: pendingList });
     } catch (err) {
       console.error('[STUDENT SUBJECTS] Error:', err.message);
       res.status(500).json({ error: err.message });
@@ -1059,11 +1168,12 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
   app.get('/api/pending-enrollments', requireLogin, requireSupabase, async (req, res) => {
     if (req.session.user.role !== 'teacher') return res.status(403).json({ error: 'Unauthorized' });
     try {
-      const { data: classes } = await supabase.from('classes').select('id, class_name, subjects').eq('teacher_id', req.session.user.id);
+      const client = supabaseAdmin || supabase;
+      const { data: classes } = await client.from('classes').select('id, class_name, subjects').eq('teacher_id', req.session.user.id);
       if (!classes || classes.length === 0) return res.json({ requests: [] });
       
       const classIds = classes.map(c => c.id);
-      const { data: requests, error } = await supabase
+      const { data: requests, error } = await client
         .from('student_enrollments')
         .select('*')
         .in('class_id', classIds)
@@ -1090,10 +1200,11 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
     if (req.session.user.role !== 'teacher') return res.status(403).json({ error: 'Unauthorized' });
     const { enrollment_id, action } = req.body;
     try {
+       const client = supabaseAdmin || supabase;
        if (action === 'approve') {
-         await supabase.from('student_enrollments').update({ status: 'approved' }).eq('id', enrollment_id);
+         await client.from('student_enrollments').update({ status: 'approved' }).eq('id', enrollment_id);
        } else {
-         await supabase.from('student_enrollments').delete().eq('id', enrollment_id);
+         await client.from('student_enrollments').delete().eq('id', enrollment_id);
        }
        res.json({ success: true });
     } catch(err) {
@@ -1105,7 +1216,8 @@ app.delete('/api/drop-subject', requireLogin, requireSupabase, async (req, res) 
     const code = (Math.abs(subjectId) % 999999).toString().padStart(6, '0');
     return `${code.slice(0, 4)}-${code.slice(4)}`;
   }
-app.delete('/api/delete-subject/:classId/:subjectId', requireLogin, requireSupabase, async (req, res) => {
+
+  app.delete('/api/delete-subject/:classId/:subjectId', requireLogin, requireSupabase, async (req, res) => {
     if (req.session.user.role !== 'teacher') {
       return res.status(403).json({ error: 'Unauthorized: Only teachers can delete subjects' });
     }

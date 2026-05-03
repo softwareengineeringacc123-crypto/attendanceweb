@@ -10,6 +10,7 @@ const state = {
   classSubjectsBuffer: [],
   currentView: 'dashboard', // 'dashboard' | 'attendance'
   activeTimers: {}, // Store timers by classId: { classId: { intervalId, remainingMinutes, isPaused } }
+  teacherFirstName: '',
 };
 
 const API = {
@@ -82,13 +83,101 @@ async function apiFetch(url, options = {}) {
   return res.json();
 }
 
+// Helper function to check if a new schedule overlaps with existing subjects
+function checkScheduleOverlap(newDaysStr, newStart, newEnd, existingSubjects) {
+  if (!newStart || !newEnd || !newDaysStr) return null;
+  const newDays = newDaysStr.split(',').map(d => d.trim());
+  
+  const toMin = (t) => {
+    if (!t) return 0;
+    const [h, m] = t.split(':').map(Number);
+    return (h * 60) + (m || 0);
+  };
+  const nStart = toMin(newStart);
+  const nEnd = toMin(newEnd);
+
+  for (const subj of existingSubjects) {
+    if (!subj.start_time || !subj.end_time || !subj.days) continue;
+    if (subj.start_time === '00:00' && subj.end_time === '00:00') continue; // Skip default 00:00 placeholders
+
+    const eDays = Array.isArray(subj.days) ? subj.days : String(subj.days).split(',').map(d => d.trim());
+    const hasCommonDay = newDays.some(d => eDays.includes(d));
+
+    if (hasCommonDay) {
+      const eStart = toMin(subj.start_time);
+      const eEnd = toMin(subj.end_time);
+      if (nStart < eEnd && eStart < nEnd) return subj;
+    }
+  }
+  return null;
+}
+
+// Custom Time Picker Wrapper Logic
+window.updateTimeStr = function(hiddenId, hId, mId, aId) {
+  const hInput = document.getElementById(hId);
+  const mInput = document.getElementById(mId);
+  const aInput = document.getElementById(aId);
+  const hiddenInput = document.getElementById(hiddenId);
+  
+  if (!hInput || !mInput || !aInput || !hiddenInput) return;
+
+  // Visual feedback highlight kapag pinindot ang up/down arrows
+  const active = document.activeElement;
+  if (active === hInput || active === mInput || active === aInput) {
+    active.style.transition = 'none';
+    active.style.backgroundColor = '#dbeafe'; // Light blue highlight
+    
+    clearTimeout(active.flashTimer);
+    active.flashTimer = setTimeout(() => {
+      active.style.transition = 'background-color 0.4s ease';
+      active.style.backgroundColor = '';
+    }, 150);
+  }
+
+  let h = parseInt(hInput.value);
+  let m = parseInt(mInput.value);
+  
+  if (isNaN(h)) h = 12;
+  if (isNaN(m)) m = 0;
+  
+  if (h < 1) h = 12;
+  if (h > 12) h = 1;
+  if (m < 0) m = 59;
+  if (m > 59) m = 0;
+  
+  hInput.value = h;
+  mInput.value = m.toString().padStart(2, '0');
+  
+  let hours24 = h;
+  if (aInput.value === 'AM' && h === 12) hours24 = 0;
+  if (aInput.value === 'PM' && h < 12) hours24 += 12;
+  
+  hiddenInput.value = hours24.toString().padStart(2, '0') + ':' + m.toString().padStart(2, '0');
+};
+
 // ===========================
 // TIME
 // ===========================
 
 function updateTime() {
+  const now = new Date();
   const el = document.getElementById('liveTime');
-  if (el) el.textContent = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  if (el) el.textContent = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  
+  updateGreeting();
+}
+
+function updateGreeting(nameStr) {
+  if (nameStr) state.teacherFirstName = nameStr.split(' ')[0] || nameStr;
+  
+  const h = new Date().getHours();
+  let greet = 'Good night';
+  if (h >= 5 && h < 12) greet = 'Good morning';
+  else if (h >= 12 && h < 18) greet = 'Good afternoon';
+  else if (h >= 18 && h < 22) greet = 'Good evening';
+
+  const el = document.getElementById('dashGreeting');
+  if (el) el.textContent = state.teacherFirstName ? `${greet}, ${state.teacherFirstName} 👋` : `${greet} 👋`;
 }
 
 // ===========================
@@ -127,6 +216,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
     notifDropdown.onclick = function(e) { e.stopPropagation(); };
+
+    var markReadBtn = notifDropdown.querySelector('.card-header span');
+    if (markReadBtn) {
+      markReadBtn.onclick = function(e) {
+        e.stopPropagation();
+        var dot = notifBtn.querySelector('.notif-dot');
+        if (dot) dot.style.display = 'none';
+      };
+    }
   }
 
   // Close both when clicking anywhere else — same as student dashboard
@@ -139,14 +237,24 @@ document.addEventListener('DOMContentLoaded', () => {
   var lb = document.getElementById('logoutBtn');
   if (lb) lb.onclick = function() { window.location.href = '/logout'; };
 
+  // ── Navigation View Switchers ──
+  document.querySelectorAll('.nav-item').forEach(nav => {
+    nav.addEventListener('click', (e) => {
+      const href = nav.getAttribute('href') || '';
+      if (href === '#dashboard' || nav.id === 'dashboardNavBtn') { e.preventDefault(); showDashboardView(); }
+      else if (href === '#schedule' || nav.id === 'scheduleNavBtn') { e.preventDefault(); showScheduleView(); }
+      else if (href === '#settings' || nav.id === 'settingsNavBtn') { e.preventDefault(); showSettingsView(); }
+    });
+  });
+
   document.getElementById('classList')?.addEventListener('click', handleClassListClick);
   loadClasses().catch(console.error);
   loadSessions().catch(console.error);
+  updateTeacherNotifications();
+  // Auto-refresh notifications (pending requests) every 30 seconds
+  setInterval(updateTeacherNotifications, 30000);
+  loadTeacherProfile();
 });
-  document.getElementById('logoutBtn')?.addEventListener('click', () => { window.location.href = '/logout'; });
-  document.getElementById('classList')?.addEventListener('click', handleClassListClick);
-  loadClasses().catch(console.error);
-  loadSessions().catch(console.error);
 
 function setupDropdown(btnId, dropdownId) {
   const btn = document.getElementById(btnId);
@@ -244,62 +352,27 @@ function renderSidebarClasses() {
         row.style.margin = '0';
         row.title = `View attendance for ${sub.subject}`;
         const timeStr = fmtTimeRange(sub.start_time, sub.end_time);
+        const roomStr = sub.room && sub.room !== 'TBD' ? ` · ${escapeHTML(sub.room)}` : '';
         row.innerHTML = `
-          <span class="sb-subject-dot"></span>
-          <span class="sb-subject-name">${escapeHTML(sub.subject)}</span>
-          ${timeStr ? `<span class="sb-subject-time">${timeStr}</span>` : ''}`;
+          <div style="display:flex; align-items:center; gap:10px; width:100%">
+            <div style="width:28px; height:28px; border-radius:6px; background:rgba(99,153,255,0.15); color:#8bb4ff; display:grid; place-items:center; flex-shrink:0;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+              </svg>
+            </div>
+            <div style="flex:1; min-width:0; text-align:left;">
+              <div class="sb-subject-name" style="font-size:12.5px; font-weight:600; color:rgba(255,255,255,0.9);">${escapeHTML(sub.subject)}</div>
+              ${(timeStr || roomStr) ? `<div class="sb-subject-time" style="font-size:10.5px; color:rgba(255,255,255,0.5); margin-top:3px; line-height:1.2;">${timeStr}${roomStr}</div>` : ''}
+            </div>
+          </div>
+        `;
         row.addEventListener('click', (e) => {
           e.stopPropagation();
           openAttendanceView(cls, sub);
         });
         
-        // Enrollment code button for this subject
-        const enrollBtn = document.createElement('button');
-        enrollBtn.style.cssText = `
-          flex-shrink:0;padding:5px 8px;border-radius:6px;border:1px solid rgba(59,130,246,0.2);
-          background:none;color:rgba(59,130,246,0.7);cursor:pointer;font-size:11px;
-          display:flex;align-items:center;justify-content:center;transition:background .15s, color .15s;
-          width:32px;height:32px`;
-        enrollBtn.title = 'Show enrollment code and subject ID';
-        enrollBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
-        enrollBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openEnrollmentModal(cls, sub);
-        });
-        enrollBtn.addEventListener('mouseover', () => {
-          enrollBtn.style.background = 'rgba(59,130,246,0.15)';
-          enrollBtn.style.color = 'rgba(59,130,246,1)';
-        });
-        enrollBtn.addEventListener('mouseout', () => {
-          enrollBtn.style.background = 'none';
-          enrollBtn.style.color = 'rgba(59,130,246,0.7)';
-        });
-        
-        // Passcode button for this subject
-        const passBtn = document.createElement('button');
-        passBtn.style.cssText = `
-          flex-shrink:0;padding:5px 8px;border-radius:6px;border:1px solid rgba(250,180,60,0.2);
-          background:none;color:rgba(250,180,60,0.7);cursor:pointer;font-size:11px;
-          display:flex;align-items:center;justify-content:center;transition:background .15s, color .15s;
-          width:32px;height:32px`;
-        passBtn.title = 'Set attendance passcode for this subject';
-        passBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`;
-        passBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openPasscodeModal(cls.id, cls.class_name);
-        });
-        passBtn.addEventListener('mouseover', () => {
-          passBtn.style.background = 'rgba(250,180,60,0.15)';
-          passBtn.style.color = 'rgba(250,180,60,1)';
-        });
-        passBtn.addEventListener('mouseout', () => {
-          passBtn.style.background = 'none';
-          passBtn.style.color = 'rgba(250,180,60,0.7)';
-        });
-        
         rowWrapper.appendChild(row);
-        rowWrapper.appendChild(enrollBtn);
-        rowWrapper.appendChild(passBtn);
         children.appendChild(rowWrapper);
       });
     }
@@ -399,9 +472,14 @@ function openAttendanceView(cls, subject) {
       <div class="card" style="overflow:hidden">
         <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
           <h3 style="font-size:14px;font-weight:700;color:var(--ink2)">Attendance Records</h3>
-          <input id="attSearchInput" type="text" placeholder="Search student…"
-            style="padding:6px 12px;border-radius:6px;border:1.5px solid var(--border2);
-                   font-size:13px;outline:none;width:200px" />
+          <div style="display:flex;gap:10px;align-items:center">
+            <input id="attDateFilter" type="date" title="Filter by date"
+              style="padding:6px 12px;border-radius:6px;border:1.5px solid var(--border2);
+                     font-size:13px;outline:none;cursor:pointer;color:var(--ink3)" />
+            <input id="attSearchInput" type="text" placeholder="Search student…"
+              style="padding:6px 12px;border-radius:6px;border:1.5px solid var(--border2);
+                     font-size:13px;outline:none;width:200px" />
+          </div>
         </div>
         <div id="attendanceTableWrap" style="overflow-x:auto">
           <div style="padding:32px;text-align:center;color:var(--ink5)">
@@ -417,7 +495,8 @@ function openAttendanceView(cls, subject) {
   document.getElementById('attendanceBackBtn').addEventListener('click', closeAttendanceView);
   document.getElementById('attRefreshBtn').addEventListener('click', () => fetchAttendanceData(cls.id, subject.id));
   document.getElementById('attExportBtn').addEventListener('click', () => exportAttendanceCSV(cls, subject));
-  document.getElementById('attSearchInput').addEventListener('input', filterAttendanceTable);
+  document.getElementById('attSearchInput').addEventListener('input', applyAttendanceFilters);
+  document.getElementById('attDateFilter').addEventListener('change', applyAttendanceFilters);
 
   fetchAttendanceData(cls.id, subject.id);
 }
@@ -446,26 +525,8 @@ async function fetchAttendanceData(classId, subjectId) {
       records = records.filter(r => Math.trunc(Number(r.subject_id)) === sidInt);
     }
 
-    const total   = records.length;
-    const present = records.filter(r => r.status === 'present').length;
-    const absent  = records.filter(r => r.status === 'absent').length;
-    const late    = records.filter(r => r.status === 'late').length;
-    const rate    = total ? Math.round((present / total) * 100) : 0;
-
-    if (statsRow) {
-      statsRow.innerHTML = [
-        { label: 'Total Records',   value: total,      color: '#0EA5E9', bg: '#eff6ff' },
-        { label: 'Present',         value: present,    color: '#22c55e', bg: '#f0fdf4' },
-        { label: 'Absent',          value: absent,     color: '#ef4444', bg: '#fef2f2' },
-        { label: 'Attendance Rate', value: rate + '%', color: '#f59e0b', bg: '#fffbeb' },
-      ].map(s => `
-        <div style="background:${s.bg};border:1px solid ${s.color}22;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
-          <div style="font-size:11px;font-weight:600;color:${s.color};text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${s.label}</div>
-          <div style="font-size:26px;font-weight:700;color:${s.color};line-height:1">${s.value}</div>
-        </div>`).join('');
-    }
-
     if (records.length === 0) {
+      if (statsRow) statsRow.innerHTML = '';
       wrap.innerHTML = `
         <div style="padding:56px 32px;text-align:center">
           <div style="width:64px;height:64px;border-radius:16px;background:#f1f5f9;
@@ -493,7 +554,7 @@ async function fetchAttendanceData(classId, subjectId) {
     }
 
     wrap.dataset.records = JSON.stringify(records);
-    renderAttendanceTable(records);
+    applyAttendanceFilters();
 
   } catch (err) {
     wrap.innerHTML = `<div style="padding:32px;text-align:center;color:#ef4444">Error: ${escapeHTML(err.message)}</div>`;
@@ -660,10 +721,60 @@ function renderAttendanceTable(records) {
     </div>`;
 }
 
-function filterAttendanceTable() {
+function applyAttendanceFilters() {
+  const wrap = document.getElementById('attendanceTableWrap');
+  const statsRow = document.getElementById('attendanceStatsRow');
+  if (!wrap || !wrap.dataset.records) return;
+
+  let records = JSON.parse(wrap.dataset.records);
+  const dateFilter = document.getElementById('attDateFilter')?.value;
+
+  // Apply Date Filter
+  if (dateFilter) {
+    records = records.filter(r => {
+      if (!r.created_at) return false;
+      const d = new Date(r.created_at);
+      const localDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      return localDate === dateFilter;
+    });
+  }
+
+  // Recalculate Stats for filtered view
+  const total   = records.length;
+  const present = records.filter(r => r.status === 'present').length;
+  const absent  = records.filter(r => r.status === 'absent').length;
+  const late    = records.filter(r => r.status === 'late').length;
+  const rate    = total ? Math.round((present / total) * 100) : 0;
+
+  if (statsRow) {
+    statsRow.innerHTML = [
+      { label: 'Total Records',   value: total,      color: '#0EA5E9', bg: '#eff6ff' },
+      { label: 'Present',         value: present,    color: '#22c55e', bg: '#f0fdf4' },
+      { label: 'Absent',          value: absent,     color: '#ef4444', bg: '#fef2f2' },
+      { label: 'Attendance Rate', value: rate + '%', color: '#f59e0b', bg: '#fffbeb' },
+    ].map(s => `
+      <div style="background:${s.bg};border:1px solid ${s.color}22;border-radius:10px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04)">
+        <div style="font-size:11px;font-weight:600;color:${s.color};text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${s.label}</div>
+        <div style="font-size:26px;font-weight:700;color:${s.color};line-height:1">${s.value}</div>
+      </div>`).join('');
+  }
+
+  if (records.length === 0) {
+    wrap.innerHTML = `
+      <div style="padding:40px 20px;text-align:center">
+        <div style="font-size:24px;margin-bottom:8px">📅</div>
+        <div style="font-size:14px;font-weight:600;color:var(--ink2)">No records found</div>
+        <div style="font-size:13px;color:var(--ink5)">Try adjusting your date filter or search query.</div>
+      </div>`;
+    return;
+  }
+
+  // Render filtered Table
+  renderAttendanceTable(records);
+
+  // Apply Student Name/Email Search Filter visually
   const query = document.getElementById('attSearchInput')?.value.toLowerCase() || '';
-  const rows  = document.querySelectorAll('#attTable tbody tr');
-  rows.forEach(row => {
+  document.querySelectorAll('#attTable tbody tr').forEach(row => {
     row.style.display = row.dataset.search?.includes(query) ? '' : 'none';
   });
 }
@@ -671,7 +782,19 @@ function filterAttendanceTable() {
 function exportAttendanceCSV(cls, subject) {
   const wrap = document.getElementById('attendanceTableWrap');
   if (!wrap?.dataset.records) { showToast('No records to export', 'error'); return; }
-  const records = JSON.parse(wrap.dataset.records);
+  
+  let records = JSON.parse(wrap.dataset.records);
+  const dateFilter = document.getElementById('attDateFilter')?.value;
+  
+  if (dateFilter) {
+    records = records.filter(r => {
+      if (!r.created_at) return false;
+      const d = new Date(r.created_at);
+      const localDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      return localDate === dateFilter;
+    });
+  }
+  
   const header  = ['Student Name', 'Email', 'Date', 'Time', 'Status'];
   const rows    = records.map(r => {
     const d = r.created_at ? new Date(r.created_at) : null;
@@ -748,27 +871,19 @@ function openPasscodeModal(classId, className) {
         <div style="margin-bottom:18px">
           <label style="display:block;font-size:12px;font-weight:600;color:var(--ink4);margin-bottom:6px">Passcode Duration <span style="color:red">*</span></label>
           <div style="display:flex;gap:8px">
-            <select id="durationSelect"
-              style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;
-                     font-size:13px;outline:none;transition:border .15s,box-shadow .15s;box-sizing:border-box;
-                     background:white;color:var(--ink2);cursor:pointer">
-              <option value="5">5 Minutes</option>
-              <option value="10">10 Minutes</option>
-              <option value="15">15 Minutes</option>
-              <option value="30">30 Minutes</option>
-              <option value="60">1 Hour</option>
-              <option value="120">2 Hours</option>
-              <option value="180">3 Hours</option>
-              <option value="0">Until Manually Closed</option>
-              <option value="custom">Custom (Seconds)</option>
-            </select>
-            <input id="customDurationInput" type="number" min="1" placeholder="Seconds" 
-              style="width:120px;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;
-                     font-size:13px;outline:none;transition:border .15s,box-shadow .15s;box-sizing:border-box;
-                     display:none" />
+            <input id="durationSelect" type="number" min="0" value="5"
+              style="width:80px;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;
+                     font-size:14px;outline:none;transition:border .15s,box-shadow .15s;box-sizing:border-box;
+                     background:white;color:var(--ink2);text-align:center" />
+            <span style="display:flex;align-items:center;font-size:13px;color:var(--ink4);font-weight:600">Min</span>
+            <input id="durationSeconds" type="number" min="0" max="59" value="0"
+              style="width:80px;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;
+                     font-size:14px;outline:none;transition:border .15s,box-shadow .15s;box-sizing:border-box;
+                     background:white;color:var(--ink2);text-align:center" />
+            <span style="display:flex;align-items:center;font-size:13px;color:var(--ink4);font-weight:600">Sec</span>
           </div>
           <div style="margin-top:8px;font-size:11px;color:var(--ink5)">
-            Passcode will automatically expire after the selected time.
+            Passcode will expire after the selected time. Set to 0 for "Until Manually Closed".
           </div>
         </div>
         <div style="display:flex;gap:8px">
@@ -793,6 +908,7 @@ function openPasscodeModal(classId, className) {
   const closeBtn   = modal.querySelector('#closePasscodeModal');
   const toggleVis  = modal.querySelector('#togglePasscodeVisibility');
   const durationSelect = modal.querySelector('#durationSelect');
+  const durationSeconds = modal.querySelector('#durationSeconds');
 
   input.focus();
 
@@ -805,6 +921,15 @@ function openPasscodeModal(classId, className) {
     input.style.boxShadow   = '';
   });
 
+  durationSeconds.addEventListener('focus', () => {
+    durationSeconds.style.borderColor = 'var(--accent,#1E40AF)';
+    durationSeconds.style.boxShadow   = '0 0 0 3px rgba(30,64,175,.1)';
+  });
+  durationSeconds.addEventListener('blur', () => {
+    durationSeconds.style.borderColor = '';
+    durationSeconds.style.boxShadow   = '';
+  });
+
   durationSelect.addEventListener('focus', () => {
     durationSelect.style.borderColor = 'var(--accent,#1E40AF)';
     durationSelect.style.boxShadow   = '0 0 0 3px rgba(30,64,175,.1)';
@@ -814,26 +939,6 @@ function openPasscodeModal(classId, className) {
     durationSelect.style.boxShadow   = '';
   });
 
-  const customDurationInput = modal.querySelector('#customDurationInput');
-  
-  // Show/hide custom input when Custom is selected
-  durationSelect.addEventListener('change', () => {
-    if (durationSelect.value === 'custom') {
-      customDurationInput.style.display = 'block';
-      customDurationInput.focus();
-    } else {
-      customDurationInput.style.display = 'none';
-    }
-  });
-
-  customDurationInput.addEventListener('focus', () => {
-    customDurationInput.style.borderColor = 'var(--accent,#1E40AF)';
-    customDurationInput.style.boxShadow   = '0 0 0 3px rgba(30,64,175,.1)';
-  });
-  customDurationInput.addEventListener('blur', () => {
-    customDurationInput.style.borderColor = '';
-    customDurationInput.style.boxShadow   = '';
-  });
 
   toggleVis.addEventListener('click', () => {
     const isPass = input.type === 'password';
@@ -849,22 +954,14 @@ function openPasscodeModal(classId, className) {
 
   saveBtn.addEventListener('click', async () => {
     const passcode = input.value.trim();
-    let duration = durationSelect.value;
+    let min = parseFloat(durationSelect.value) || 0;
+    let sec = parseFloat(durationSeconds.value) || 0;
     
     if (!passcode) { showToast('Please enter a passcode', 'error'); input.focus(); return; }
     
-    // Handle custom duration
-    if (duration === 'custom') {
-      const customSeconds = parseInt(customDurationInput.value);
-      if (!customSeconds || customSeconds < 1) {
-        showToast('Please enter a valid number of seconds', 'error');
-        customDurationInput.focus();
-        return;
-      }
-      duration = customSeconds / 60; // Convert seconds to minutes
-    } else {
-      duration = parseInt(duration);
-    }
+    if (min < 0) min = 0;
+    if (sec < 0) sec = 0;
+    let duration = min + (sec / 60);
     
     await withLoading(saveBtn, 'Saving…', async () => {
       try {
@@ -1039,7 +1136,7 @@ function openSubjectModal() {
 
 function hideSubjectModal() {
   document.getElementById('subjectModal').style.display = 'none';
-  ['subjectNameInput','subjectStartTime','subjectEndTime','subjectRoomInput']
+  ['subjectNameInput','subjectRoomInput']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.querySelectorAll('.subjectDayCheckboxModal').forEach(cb => (cb.checked = false));
 }
@@ -1089,6 +1186,23 @@ function addSubjectToClass() {
   if (!subjectName)  { showToast('Please enter a subject name', 'error'); return; }
   if (!selectedDays) { showToast('Please select at least one day', 'error'); return; }
 
+  // Check for time overlaps
+  if (startTime && endTime) {
+    if (startTime >= endTime) {
+      showToast('End time must be after start time', 'error'); return;
+    }
+    const allExisting = [...state.classSubjectsBuffer];
+    state.classesData.forEach(cls => {
+      (cls.subjects || []).forEach(s => allExisting.push({...s, className: cls.class_name}));
+    });
+    const overlap = checkScheduleOverlap(selectedDays, startTime, endTime, allExisting);
+    if (overlap) {
+      const loc = overlap.className ? `class: ${overlap.className}` : 'the pending subjects';
+      showToast(`Schedule overlaps with "${overlap.subject}" in ${loc}`, 'error');
+      return;
+    }
+  }
+
   // Push to buffer
   state.classSubjectsBuffer.push({
     subject:    subjectName,
@@ -1099,7 +1213,7 @@ function addSubjectToClass() {
   });
 
   // Clear inputs for next subject
-  ['subjectNameInputClass', 'subjectStartTimeClass', 'subjectEndTimeClass', 'subjectRoomInputClass']
+  ['subjectNameInputClass', 'subjectRoomInputClass']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.querySelectorAll('.subjectDayCheckbox').forEach(cb => (cb.checked = false));
 
@@ -1234,11 +1348,11 @@ async function loadClasses() {
       <button type="button"
         data-action="delete-class"
         data-class-id="${c.id}"
-        style="border:none;background:#ef4444;color:white;cursor:pointer;
+        style="border:none;background:transparent;color:var(--ink6, #94a3b8);cursor:pointer;
                width:42px;border-radius:8px;display:flex;align-items:center;
-               justify-content:center;font-size:16px;flex-shrink:0;transition:background .2s"
-        onmouseover="this.style.background='#dc2626'"
-        onmouseout="this.style.background='#ef4444'"
+               justify-content:center;font-size:16px;flex-shrink:0;transition:all .2s;opacity:0.6;"
+        onmouseover="this.style.background='#fee2e2'; this.style.color='#dc2626'; this.style.opacity='1';"
+        onmouseout="this.style.background='transparent'; this.style.color='var(--ink6, #94a3b8)'; this.style.opacity='0.6';"
         title="Delete class">🗑</button>
     </div>
 
@@ -1296,50 +1410,18 @@ async function loadClasses() {
                 ${s.days ? ' · ' + escapeHTML(s.days) : ''}
               </div>
             </button>
-            <!-- Passcode button -->
-            <button type="button"
-              style="flex-shrink:0;width:32px;height:32px;border-radius:6px;
-                     border:1px solid rgba(250,180,60,0.3);background:none;
-                     color:rgba(250,180,60,0.8);cursor:pointer;display:flex;
-                     align-items:center;justify-content:center;transition:all .15s"
-              title="Set passcode"
-              onclick="openPasscodeModal(${c.id}, '${escapeHTML(c.class_name).replace(/'/g,"\\'")}')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                   stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px">
-                <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
-              </svg>
-            </button>
-            <!-- Start Session button -->
-<button type="button"
-  style="flex-shrink:0;width:32px;height:32px;border-radius:6px;
-         border:1px solid rgba(34,197,94,0.3);background:none;
-         color:rgba(34,197,94,0.8);cursor:pointer;display:flex;
-         align-items:center;justify-content:center;transition:all .15s"
-  title="Start attendance session for this subject"
-  onclick="startSubjectSession(${c.id}, '${escapeHTML(c.class_name).replace(/'/g,"\\'")}', ${s.id}, '${escapeHTML(s.subject).replace(/'/g,"\\'")}')">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-       stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px">
-    <circle cx="12" cy="12" r="10"/>
-    <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/>
-  </svg>
-            </button>
             <!-- Delete subject button -->
             <button type="button"
               data-action="delete-subject"
               data-class-id="${c.id}"
               data-subject-id="${s.id}"
               style="flex-shrink:0;width:32px;height:32px;border-radius:6px;
-                     border:1px solid rgba(239,68,68,0.3);background:none;
-                     color:rgba(239,68,68,0.8);cursor:pointer;display:flex;
-                     align-items:center;justify-content:center;transition:all .15s"
+                     border:none;background:transparent;color:var(--ink5, #64748b);
+                     cursor:pointer;display:grid;place-items:center;transition:all .15s;opacity:0.6"
+              onmouseover="this.style.background='#fee2e2'; this.style.color='#dc2626'; this.style.opacity='1'"
+              onmouseout="this.style.background='transparent'; this.style.color='var(--ink5, #64748b)'; this.style.opacity='0.6'"
               title="Delete subject">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                   stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                <path d="M10 11v6M14 11v6"/>
-                <path d="M9 6V4h6v2"/>
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
             </button>
           </div>`).join('')
       }
@@ -1374,19 +1456,80 @@ async function loadClasses() {
     });
     
     renderSidebarClasses();
+  renderTeacherTodayClasses();
 
   } catch (err) {
     classList.innerHTML = `<div class="class-item" style="cursor:default;color:#ef4444">Error: ${escapeHTML(err.message)}</div>`;
   }
 }
 
+function renderTeacherTodayClasses() {
+  const container = document.getElementById('todayClassList');
+  if (!container) return;
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayDow = dayNames[new Date().getDay()];
+
+  let todaySubjects = [];
+  state.classesData.forEach(cls => {
+    (cls.subjects || []).forEach(sub => {
+      const days = Array.isArray(sub.days) ? sub.days : (sub.days || '').split(',').map(d => d.trim()).filter(Boolean);
+      if (days.includes(todayDow)) {
+        todaySubjects.push({
+          classId: cls.id,
+          className: cls.class_name,
+          subjectId: sub.id,
+          subjectName: sub.subject,
+          startTime: sub.start_time,
+          endTime: sub.end_time,
+          room: sub.room || 'TBA',
+          timeRange: fmtTimeRange(sub.start_time, sub.end_time)
+        });
+      }
+    });
+  });
+
+  if (todaySubjects.length === 0) {
+    container.innerHTML = '<div style="padding:30px 20px;text-align:center;color:var(--ink5);font-size:13px">No classes scheduled for today. 🎉</div>';
+    return;
+  }
+
+  // I-sort base sa oras (Start Time)
+  todaySubjects.sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
+
+  container.innerHTML = todaySubjects.map((s, index) => {
+    const borderStyle = index === todaySubjects.length - 1 ? '' : 'border-bottom:1px solid var(--border);';
+    const clsStr = JSON.stringify({id: s.classId, class_name: s.className}).replace(/"/g, '&quot;');
+    const subjStr = JSON.stringify({id: s.subjectId, subject: s.subjectName, start_time: s.startTime||'', end_time: s.endTime||'', room: s.room||''}).replace(/"/g, '&quot;');
+    
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;${borderStyle}transition:background 0.2s"
+           onmouseover="this.style.background='var(--surface2, #f8fafc)'" onmouseout="this.style.background='transparent'">
+        <div style="min-width:0;display:flex;align-items:center;gap:12px">
+          <div style="width:4px;height:36px;border-radius:99px;background:var(--accent,#1E40AF)"></div>
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(s.subjectName)}</div>
+            <div style="font-size:12px;color:var(--ink5);margin-top:2px">${escapeHTML(s.className)} · ${s.timeRange} · ${escapeHTML(s.room)}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="openAttendanceView(${clsStr}, ${subjStr})" style="flex-shrink:0;padding:6px 12px;border:1px solid var(--border2);background:var(--surface2);color:var(--ink3);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s" onmouseover="this.style.background='var(--surface)';this.style.borderColor='var(--border)'" onmouseout="this.style.background='var(--surface2)';this.style.borderColor='var(--border2)'" title="View Attendance Records">👁️ View</button>
+          <button onclick="startSubjectSession(${s.classId}, '${escapeHTML(s.className).replace(/'/g,"\\'")}', ${s.subjectId}, '${escapeHTML(s.subjectName).replace(/'/g,"\\'")}')" style="flex-shrink:0;padding:6px 12px;border:none;background:#10b981;color:#fff;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;transition:background 0.2s" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10b981'">▶ Start</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
 function selectClass(classId) {
   state.selectedClassId = classId;
   const cls = state.classesData.find(c => c.id === classId);
   if (cls) {
-    document.getElementById('selectedClassName').textContent = escapeHTML(cls.class_name);
-    document.getElementById('selectedClassMeta').textContent = cls.schedule ? `Days: ${cls.schedule}` : '';
-    document.getElementById('selectedClassInfo').style.display = 'flex';
+    const cName = document.getElementById('selectedClassName');
+    if (cName) cName.textContent = escapeHTML(cls.class_name);
+    const cMeta = document.getElementById('selectedClassMeta');
+    if (cMeta) cMeta.textContent = cls.schedule ? `Days: ${cls.schedule}` : '';
+    const cInfo = document.getElementById('selectedClassInfo');
+    if (cInfo) cInfo.style.display = 'flex';
     // Subjects are already loaded; just update the inline container display
     toggleClassSubjects(classId);
   }
@@ -1416,7 +1559,8 @@ async function deleteClass(classId) {
     });
     if (!data.success) throw new Error(data.error || 'Failed to delete class');
     state.selectedClassId = null;
-    document.getElementById('selectedClassInfo').style.display = 'none';
+    const cInfo = document.getElementById('selectedClassInfo');
+    if (cInfo) cInfo.style.display = 'none';
     await loadClasses();
     showToast('Class deleted.', 'success');
   } catch (err) {
@@ -1439,6 +1583,22 @@ async function submitSubjectForm() {
   if (!subjectName) { showToast('Please enter a subject name', 'error'); return; }
   if (!selectedDays) { showToast('Please select at least one day', 'error'); return; }
   
+  // Check for time overlaps
+  if (startTime && endTime) {
+    if (startTime >= endTime) {
+      showToast('End time must be after start time', 'error'); return;
+    }
+    const allExisting = [];
+    state.classesData.forEach(cls => {
+      (cls.subjects || []).forEach(s => allExisting.push({...s, className: cls.class_name}));
+    });
+    const overlap = checkScheduleOverlap(selectedDays, startTime, endTime, allExisting);
+    if (overlap) {
+      showToast(`Schedule overlaps with "${overlap.subject}" in class: ${overlap.className || 'Unknown'}`, 'error');
+      return;
+    }
+  }
+
   const btn = document.querySelector('#subjectModal .btn-primary');
   await withLoading(btn, 'Saving...', async () => {
     const data = await apiFetch(API.addSubjects(state.selectedClassId), {
@@ -1562,7 +1722,12 @@ async function loadSessions() {
     const container = document.getElementById('sessionsContainer');
 
     if (!data.sessions || data.sessions.length === 0) {
-      container.innerHTML = '<div style="padding:14px;text-align:center;color:var(--ink4)">No attendance sessions yet.</div>';
+      container.innerHTML = `
+        <div style="padding:40px 20px;text-align:center;color:var(--ink5)">
+          <div style="width:48px;height:48px;border-radius:12px;background:var(--surface2,#f8fafc);border:1px dashed var(--border2,rgba(15,23,42,.12));display:grid;place-items:center;margin:0 auto 12px;font-size:20px;color:var(--ink4)">🕒</div>
+          <div style="font-size:14px;font-weight:600;color:var(--ink2)">No recent sessions</div>
+          <div style="font-size:12px;margin-top:4px">Start a session from your classes to see it here.</div>
+        </div>`;
       return;
     }
 
@@ -1572,9 +1737,21 @@ async function loadSessions() {
       const created = new Date(session.created_at).toLocaleString();
       const code = session.session_password || session.session_code || '—';
 
+      // Hanapin ang subject details para sa View button
+      const cls = state.classesData.find(c => c.id === session.class_id);
+      const subj = cls ? (cls.subjects || []).find(s => Math.trunc(Number(s.id)) === Math.trunc(Number(session.subject_id))) : null;
+      
+      let viewBtn = '';
+      if (!isActive && cls && subj) {
+        const clsStr = JSON.stringify({id: cls.id, class_name: cls.class_name}).replace(/"/g, '&quot;');
+        const subjStr = JSON.stringify({id: subj.id, subject: subj.subject, start_time: subj.start_time||'', end_time: subj.end_time||'', room: subj.room||''}).replace(/"/g, '&quot;');
+        viewBtn = `<button onclick="openAttendanceView(${clsStr}, ${subjStr})" style="flex-shrink:0;padding:6px 12px;border:1px solid var(--border2);background:var(--surface2);color:var(--ink3);border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s" onmouseover="this.style.background='var(--surface)';this.style.borderColor='var(--border)'" onmouseout="this.style.background='var(--surface2)';this.style.borderColor='var(--border2)'" title="View Attendance Records">👁️ View</button>`;
+      }
+
       return `
-        <div style="padding:12px 14px;border-bottom:1px solid var(--border,#e2e8f0);
-                    display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2e8f0);
+                    display:flex;justify-content:space-between;align-items:center;gap:10px;transition:background 0.2s"
+             onmouseover="this.style.background='var(--surface2, #f8fafc)'" onmouseout="this.style.background='transparent'">
           <div style="min-width:0">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
               <div style="font-weight:600;color:var(--ink0,#0f172a);
@@ -1586,18 +1763,13 @@ async function loadSessions() {
                 : '<span style="padding:2px 8px;border-radius:99px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:700;flex-shrink:0">Ended</span>'}
             </div>
             <div style="font-size:11px;color:var(--ink5,#64748b)">
-              Code: <strong style="font-family:monospace">${escapeHTML(code)}</strong>
+              ${subj ? `<strong style="color:var(--ink3)">${escapeHTML(subj.subject)}</strong> · ` : ''}Code: <strong style="font-family:monospace">${escapeHTML(code)}</strong>
               · ${created}
             </div>
           </div>
-          ${isActive ? `
-            <button
-              onclick="endSession(${session.id}, ${session.class_id || 'null'})"
-              style="flex-shrink:0;padding:6px 14px;border:none;background:#ef4444;
-                     color:white;border-radius:6px;cursor:pointer;font-size:12px;
-                     font-weight:600;white-space:nowrap">
-              End Session
-            </button>` : ''}
+          <div style="display:flex;gap:6px">
+            ${isActive ? `<button onclick="endSession(${session.id}, ${session.class_id || 'null'})" style="flex-shrink:0;padding:6px 14px;border:none;background:#ef4444;color:white;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;transition:background 0.2s" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">End Session</button>` : viewBtn}
+          </div>
         </div>`;
     }).join('');
 
@@ -1761,16 +1933,19 @@ function startSubjectSession(classId, className, subjectId, subjectName) {
         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink4);margin-bottom:6px">
           Session Duration
         </label>
-        <select id="subjectSessionDuration"
-          style="width:100%;padding:10px 12px;border:1.5px solid var(--border2,#e2e8f0);
-                 border-radius:8px;font-size:13px;outline:none;
-                 background:white;color:var(--ink2);cursor:pointer;box-sizing:border-box">
-          <option value="15">15 Minutes</option>
-          <option value="30" selected>30 Minutes</option>
-          <option value="60">1 Hour</option>
-          <option value="120">2 Hours</option>
-          <option value="0">Until Manually Stopped</option>
-        </select>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="subjectSessionDuration" type="number" min="0" value="5"
+            style="width:80px;padding:10px 12px;border:1.5px solid var(--border2,#e2e8f0);
+                   border-radius:8px;font-size:14px;outline:none;text-align:center;
+                   background:white;color:var(--ink2);box-sizing:border-box" />
+          <span style="font-size:13px;color:var(--ink4);font-weight:600">Min</span>
+          <input id="subjectSessionSeconds" type="number" min="0" max="59" value="0"
+            style="width:80px;padding:10px 12px;border:1.5px solid var(--border2,#e2e8f0);
+                   border-radius:8px;font-size:14px;outline:none;text-align:center;
+                   background:white;color:var(--ink2);box-sizing:border-box" />
+          <span style="font-size:13px;color:var(--ink4);font-weight:600">Sec</span>
+        </div>
+        <div style="font-size:11px;color:var(--ink5);margin-top:6px">Set to 0 for "Until Manually Stopped".</div>
       </div>
 
       <div style="display:flex;gap:8px">
@@ -1792,7 +1967,9 @@ function startSubjectSession(classId, className, subjectId, subjectName) {
 
   document.getElementById('startSubjectSessionBtn').addEventListener('click', async () => {
     const passcode = document.getElementById('subjectSessionPasscode').value.trim();
-    const duration = parseInt(document.getElementById('subjectSessionDuration').value);
+    const minVal = parseFloat(document.getElementById('subjectSessionDuration').value) || 0;
+    const secVal = parseFloat(document.getElementById('subjectSessionSeconds').value) || 0;
+    const duration = Math.max(0, minVal + (secVal / 60));
     const btn      = document.getElementById('startSubjectSessionBtn');
 
     btn.disabled    = true;
@@ -2029,7 +2206,12 @@ function renderTeacherScheduleGrid() {
 function showScheduleView() {
   // Hide main dash grid, show schedule panel
   document.querySelector('.dash-grid')?.style.setProperty('display', 'none');
-  document.getElementById('teacherSchedulePanel').style.display = 'block';
+  const pSched = document.getElementById('teacherSchedulePanel');
+  if (pSched) pSched.style.display = 'block';
+  const pSet = document.getElementById('teacherSettingsPanel');
+  if (pSet) pSet.style.display = 'none';
+  const pAtt = document.getElementById('attendancePanel');
+  if (pAtt) pAtt.style.display = 'none';
 
   // Update header
   const pt = document.getElementById('pageTitle');
@@ -2040,6 +2222,7 @@ function showScheduleView() {
   // Sync nav active state
   document.querySelectorAll('.nav-item').forEach(a => a.classList.remove('active'));
   document.getElementById('scheduleNavBtn')?.classList.add('active');
+  document.querySelector('.nav-item[href="#schedule"]')?.classList.add('active');
 
   // Classes must be loaded first; loadClasses() already runs on DOMContentLoaded
   renderTeacherScheduleGrid();
@@ -2047,8 +2230,12 @@ function showScheduleView() {
 
 function showSettingsView() {
   document.querySelector('.dash-grid')?.style.setProperty('display', 'none');
-  document.getElementById('teacherSchedulePanel').style.display = 'none';
-  document.getElementById('teacherSettingsPanel').style.display = 'block';
+  const pSched = document.getElementById('teacherSchedulePanel');
+  if (pSched) pSched.style.display = 'none';
+  const pSet = document.getElementById('teacherSettingsPanel');
+  if (pSet) pSet.style.display = 'block';
+  const pAtt = document.getElementById('attendancePanel');
+  if (pAtt) pAtt.style.display = 'none';
 
   const pt = document.getElementById('pageTitle');
   const ps = document.getElementById('pageSub');
@@ -2057,12 +2244,17 @@ function showSettingsView() {
 
   document.querySelectorAll('.nav-item').forEach(a => a.classList.remove('active'));
   document.getElementById('settingsNavBtn')?.classList.add('active');
+  document.querySelector('.nav-item[href="#settings"]')?.classList.add('active');
 }
 
 function showDashboardView() {
   document.querySelector('.dash-grid')?.style.setProperty('display', '');
-  document.getElementById('teacherSchedulePanel').style.display = 'none';
-  document.getElementById('teacherSettingsPanel').style.display = 'none';
+  const pSched = document.getElementById('teacherSchedulePanel');
+  if (pSched) pSched.style.display = 'none';
+  const pSet = document.getElementById('teacherSettingsPanel');
+  if (pSet) pSet.style.display = 'none';
+  const pAtt = document.getElementById('attendancePanel');
+  if (pAtt) pAtt.style.display = 'none';
 
   const pt = document.getElementById('pageTitle');
   const ps = document.getElementById('pageSub');
@@ -2074,6 +2266,8 @@ function showDashboardView() {
 
   const teacherName = document.querySelector('.student-name')?.textContent?.trim() || '';
   updateGreeting(teacherName);
+  const dashBtn = document.getElementById('dashboardNavBtn') || document.querySelector('.nav-item[href="#dashboard"]');
+  if (dashBtn) dashBtn.classList.add('active');
 }
 
 window.startSubjectSession = startSubjectSession;
@@ -2089,10 +2283,18 @@ window.endSession = endSession;
 window.showScheduleView    = showScheduleView;
 window.showDashboardView   = showDashboardView;
 
+let previousPendingCount = -1;
+
 async function updateTeacherNotifications() {
   try {
     const res = await apiFetch('/api/pending-enrollments');
     const reqs = res.requests || [];
+    
+    if (previousPendingCount !== -1 && reqs.length > previousPendingCount) {
+      showToast(`You have ${reqs.length - previousPendingCount} new pending enrollment request(s)!`, 'info');
+    }
+    previousPendingCount = reqs.length;
+
     const notifBtn = document.getElementById('notifBtn');
     let dot = notifBtn?.querySelector('.notif-dot');
     if (!dot && notifBtn) {
@@ -2130,8 +2332,74 @@ async function updateTeacherNotifications() {
       if (dot) dot.style.display = 'none';
       container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--ink5);font-size:13px">No pending enrollment requests.</div>';
     }
+    
+    updatePendingEnrollmentsBox(reqs);
   } catch (e) {
     console.error('Failed to load notifications:', e);
+  }
+}
+
+function updatePendingEnrollmentsBox(reqs) {
+  let box = document.getElementById('pendingEnrollmentsBox');
+  
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'pendingEnrollmentsBox';
+    box.className = 'card';
+    box.style.cssText = 'margin-top: 20px; margin-bottom: 24px; overflow: hidden;';
+    
+    // Ilagay ang box direkta sa ilalim ng "My Classes"
+    const classList = document.getElementById('classList');
+    if (classList) {
+      const parentCard = classList.closest('.card') || classList;
+      if (parentCard.parentNode) {
+        parentCard.parentNode.insertBefore(box, parentCard.nextSibling);
+      }
+    } else {
+      const dashGrid = document.querySelector('.dash-grid');
+      if (dashGrid) {
+        dashGrid.appendChild(box);
+      }
+    }
+  }
+
+  if (box) {
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border, #e2e8f0);display:flex;align-items:center;justify-content:space-between;background:var(--surface, #fff)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;border-radius:8px;background:#fffbeb;color:#f59e0b;display:grid;place-items:center;flex-shrink:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+          </div>
+          <h3 style="margin:0;font-size:15px;font-weight:700;color:var(--ink2, #1e293b)">Pending Requests</h3>
+        </div>
+        <span style="background:#f59e0b;color:white;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700">${reqs.length}</span>
+      </div>
+      <div style="padding:0; max-height: 280px; overflow-y: auto;">
+        ${reqs.length === 0 ? `
+          <div style="padding: 24px; text-align: center; color: var(--ink5, #64748b); font-size: 13px;">
+            No pending requests at the moment.
+          </div>
+        ` : reqs.map(r => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border, #e2e8f0);background:var(--surface, #fff);transition:background 0.2s" onmouseover="this.style.background='var(--surface2, #f8fafc)'" onmouseout="this.style.background='var(--surface, #fff)'">
+            <div style="min-width:0; padding-right:12px;">
+              <div style="font-weight:600;font-size:14px;color:var(--ink2, #1e293b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(r.student_name)}</div>
+              <div style="font-size:12px;color:var(--ink5, #64748b);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                Wants to join: <strong style="color:var(--accent, #1E40AF)">${escapeHTML(r.subject_name)}</strong> · ${escapeHTML(r.class_name)}
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-shrink:0">
+              <button onclick="handleEnrollmentRequest(${r.id}, 'approve')" title="Accept" style="width:36px;height:36px;border-radius:8px;border:1px solid #16a34a;background:#dcfce7;color:#16a34a;cursor:pointer;display:grid;place-items:center;transition:all 0.2s" onmouseover="this.style.background='#16a34a'; this.style.color='#fff'" onmouseout="this.style.background='#dcfce7'; this.style.color='#16a34a'">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+              <button onclick="handleEnrollmentRequest(${r.id}, 'reject')" title="Reject" style="width:36px;height:36px;border-radius:8px;border:1px solid #dc2626;background:#fee2e2;color:#dc2626;cursor:pointer;display:grid;place-items:center;transition:all 0.2s" onmouseover="this.style.background='#dc2626'; this.style.color='#fff'" onmouseout="this.style.background='#fee2e2'; this.style.color='#dc2626'">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
   }
 }
 
@@ -2151,3 +2419,122 @@ window.handleEnrollmentRequest = async function(id, action) {
     showToast('Error handling request: ' + e.message, 'error');
   }
 };
+
+// ===========================
+// TEACHER PROFILE & SETTINGS
+// ===========================
+let currentTeacherAvatar = null;
+
+window.loadTeacherProfile = async function() {
+  try {
+    const profile = await apiFetch('/api/user-profile');
+    
+    // Update header avatar
+    const initials = (profile.name || 'T').charAt(0).toUpperCase();
+    const headerAvatar = document.querySelector('#profileBtn');
+    if (headerAvatar) {
+      if (profile.avatar) {
+        headerAvatar.innerHTML = `<img src="${profile.avatar}" style="width:32px;height:32px;border-radius:50%;object-fit:cover">`;
+      } else {
+        headerAvatar.innerHTML = `<div style="width:32px;height:32px;border-radius:50%;background:var(--accent,#1E40AF);color:white;display:grid;place-items:center;font-weight:bold">${initials}</div>`;
+      }
+    }
+    
+    // Update Settings Form fields
+    const nameInput = document.getElementById('settingsName');
+    const deptInput = document.getElementById('settingsDept');
+    const emailInput = document.getElementById('settingsEmail');
+    const settingsAvatar = document.getElementById('teacherAvatarImg');
+    const initialsAvatar = document.getElementById('teacherAvatarInitials');
+    
+    if (nameInput) nameInput.value = profile.name || '';
+    if (deptInput) deptInput.value = profile.department || '';
+    if (emailInput) emailInput.value = profile.email || '';
+    
+    if (profile.name) updateGreeting(profile.name);
+    
+    if (profile.avatar) {
+      currentTeacherAvatar = profile.avatar;
+      if (settingsAvatar) { settingsAvatar.src = profile.avatar; settingsAvatar.style.display = 'block'; }
+      if (initialsAvatar) initialsAvatar.style.display = 'none';
+    } else {
+      if (initialsAvatar) { initialsAvatar.textContent = initials; initialsAvatar.style.display = 'grid'; }
+      if (settingsAvatar) settingsAvatar.style.display = 'none';
+    }
+  } catch (err) {
+    console.error('Failed to load teacher profile:', err);
+  }
+}
+
+window.handleAvatarUpload = function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { showToast('File is too large (Max 2MB).', 'error'); return; }
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    currentTeacherAvatar = e.target.result;
+    const img = document.getElementById('teacherAvatarImg');
+    const init = document.getElementById('teacherAvatarInitials');
+    if (img) { img.src = currentTeacherAvatar; img.style.display = 'block'; }
+    if (init) init.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+let isEditingTeacherProfile = false;
+window.toggleTeacherProfileEdit = function() {
+  isEditingTeacherProfile = !isEditingTeacherProfile;
+  const nameInput = document.getElementById('settingsName');
+  const deptInput = document.getElementById('settingsDept');
+  const saveBtn = document.getElementById('saveProfileBtn');
+  const editBtn = document.getElementById('editTeacherProfileBtn');
+  const avatarBtn = document.getElementById('avatarUploadBtnWrapper');
+
+  if (isEditingTeacherProfile) {
+    if (nameInput) { nameInput.removeAttribute('readonly'); nameInput.style.background = 'var(--surface, #fff)'; nameInput.style.cursor = 'text'; }
+    if (deptInput) { deptInput.removeAttribute('readonly'); deptInput.style.background = 'var(--surface, #fff)'; deptInput.style.cursor = 'text'; }
+    if (saveBtn) saveBtn.style.display = 'block';
+    if (avatarBtn) avatarBtn.style.display = 'block';
+    if (editBtn) {
+      editBtn.innerHTML = 'Cancel';
+      editBtn.style.color = '#ef4444';
+      editBtn.style.borderColor = 'rgba(239,68,68,0.3)';
+    }
+  } else {
+    if (nameInput) { nameInput.setAttribute('readonly', 'true'); nameInput.style.background = 'var(--surface2, #f8fafc)'; nameInput.style.cursor = 'not-allowed'; }
+    if (deptInput) { deptInput.setAttribute('readonly', 'true'); deptInput.style.background = 'var(--surface2, #f8fafc)'; deptInput.style.cursor = 'not-allowed'; }
+    if (saveBtn) saveBtn.style.display = 'none';
+    if (avatarBtn) avatarBtn.style.display = 'none';
+    if (editBtn) {
+      editBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Edit Profile`;
+      editBtn.style.color = '';
+      editBtn.style.borderColor = '';
+    }
+    loadTeacherProfile(); // Revert any unsaved changes
+  }
+};
+
+window.saveTeacherProfile = async function() {
+  const name = document.getElementById('settingsName')?.value.trim();
+  const dept = document.getElementById('settingsDept')?.value.trim();
+  const btn = document.getElementById('saveProfileBtn');
+  if (!name) { showToast('Name cannot be empty', 'error'); return; }
+  
+  await withLoading(btn, 'Saving...', async () => {
+    try {
+      const res = await apiFetch('/api/update-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, department: dept, section: null, avatar: currentTeacherAvatar })
+      });
+      if (res.success) {
+        showToast('Profile updated successfully!', 'success');
+        if (isEditingTeacherProfile) toggleTeacherProfileEdit(); // Turn off edit mode
+        loadTeacherProfile(); // Refresh avatars globally
+      }
+    } catch (err) {
+      showToast('Failed to save profile: ' + err.message, 'error');
+    }
+  });
+}
