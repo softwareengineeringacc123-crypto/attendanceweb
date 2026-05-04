@@ -671,6 +671,15 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
   }
 
   try {
+    // 1. Get the session to find its class_id
+    const { data: session, error: fetchErr } = await supabase
+      .from('attendance_sessions')
+      .select('class_id')
+      .eq('id', req.params.sessionId)
+      .eq('teacher_id', req.session.user.id)
+      .single();
+
+    // 2. Mark session inactive
     const { error } = await supabase
       .from('attendance_sessions')
       .update({ is_active: false })
@@ -678,6 +687,16 @@ app.patch('/api/attendance-sessions/:sessionId/stop', requireLogin, requireSupab
       .eq('teacher_id', req.session.user.id);
 
     if (error) throw error;
+
+    // 3. Clear the password from the class
+    if (session?.class_id) {
+      await (supabaseAdmin || supabase)
+        .from('classes')
+        .update({ password: null })
+        .eq('id', session.class_id)
+        .eq('teacher_id', req.session.user.id);
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1460,7 +1479,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
   const subjectIdInt = Math.trunc(Number(subjectId));
 
   try {
-    // Verify the class exists and check passcode
+    // Step 1 — Verify the class exists
     const { data: classData, error: classError } = await supabaseAdmin
       .from('classes')
       .select('id, class_name, password, subjects')
@@ -1471,32 +1490,19 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
       return res.status(404).json({ error: 'Class not found' });
     }
 
-    // Check for an active session in attendance_sessions using subject_id from your new SQL table
-    const { data: sessionData } = await supabaseAdmin
-      .from('attendance_sessions')
-      .select('*')
-      .eq('class_id', classId)
-      .eq('subject_id', subjectIdInt)
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (sessionData) {
-      // Check expiration if set
-      if (sessionData.expires_at && new Date(sessionData.expires_at) < new Date()) {
-        return res.status(401).json({ error: 'This attendance session has expired.' });
-      }
-      // Check password if session requires it
-      if (sessionData.session_password && (!passcode || passcode.trim() !== sessionData.session_password.trim())) {
-        return res.status(401).json({ error: 'Incorrect session passcode.' });
-      }
-    } else if (classData.password) {
-      // Fallback to legacy class-level password if no active session record is found
-      if (!passcode || passcode.trim() !== classData.password.trim()) {
-        return res.status(401).json({ error: 'Incorrect passcode. Please try again.' });
-      }
+    // Step 2 — Passcode check against classes.password only
+    // If password is null/empty, block entry entirely
+    if (!classData.password) {
+      return res.status(401).json({ error: 'No active attendance session. Please wait for your teacher to start one.' });
     }
 
-    // Find the subject details
+    // If password exists but student entered wrong one, warn them
+    const enteredPasscode = (passcode || '').trim();
+      if (enteredPasscode !== classData.password.trim()) {
+        return res.status(401).json({ error: 'Incorrect passcode. Please try again.' });
+      }
+
+    // Step 3 — Find the subject details
     const subject = (classData.subjects || []).find(
       s => Math.trunc(Number(s.id)) === subjectIdInt
     );
@@ -1504,7 +1510,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
       return res.status(404).json({ error: 'Subject not found in class' });
     }
 
-    // Check if already submitted attendance today
+    // Step 4 — Duplicate check (already submitted today)
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -1521,25 +1527,14 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
       .maybeSingle();
 
     if (existing) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Attendance already recorded today',
-        status: existing.status 
+        status: existing.status
       });
     }
 
-    // Determine status based on time
+    // Step 5 — Insert attendance record as present only
     const now = new Date();
-    const currentMin = now.getHours() * 60 + now.getMinutes();
-
-    let startMin = 0;
-    if (subject.start_time) {
-      const [h, m] = subject.start_time.split(':').map(Number);
-      startMin = h * 60 + m;
-    }
-
-    // Grace period: 15 minutes before marking late
-    const status = currentMin <= startMin + 15 ? 'present' : 'late';
-
     const today = now.toISOString().split('T')[0];
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dow = dayNames[now.getDay()];
@@ -1552,7 +1547,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
         student_email: req.session.user.email,
         class_id:      classId,
         subject_id:    subjectIdInt,
-        status,
+        status:        'present',
         date:          today,
         dow,
         time:          subject.start_time && subject.end_time
@@ -1564,7 +1559,8 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
 
     if (error) throw error;
 
-    res.json({ success: true, status });
+    res.json({ success: true, status: 'present' });
+
   } catch (err) {
     console.error('[SUBMIT ATTENDANCE] Error:', err.message);
     res.status(500).json({ error: err.message });

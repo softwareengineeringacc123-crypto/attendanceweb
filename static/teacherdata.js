@@ -967,7 +967,15 @@ function openAttendanceView(cls, subject) {
           </svg>
           Refresh
         </button>
-
+        <button id="attImportBtn" class="att-action-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="7 10 12 5 17 10"/>
+            <line x1="12" y1="5" x2="12" y2="17"/>
+          </svg>
+          Import
+        </button>
         <button id="attExportBtn" class="att-action-btn att-export-btn">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1011,6 +1019,7 @@ function openAttendanceView(cls, subject) {
     syncEditModeUI();
     fetchAttendanceData(cls.id, subject.id);
   });
+  document.getElementById('attImportBtn').addEventListener('click', () => openImportModal(cls, subject));
   document.getElementById('attExportBtn').addEventListener('click', () => exportAttendanceCSV(cls, subject));
   document.getElementById('attSearchInput').addEventListener('input', applyAttendanceFilters);
   document.getElementById('attDateFilter').addEventListener('change', applyAttendanceFilters);
@@ -1631,29 +1640,40 @@ function toggleTimerPause(classId) {
 
 async function stopTimer(classId) {
   if (!state.activeTimers[classId]) return;
-  
-  const timer = state.activeTimers[classId];
-  clearInterval(timer.intervalId);
-  
-  const timerSection = document.getElementById(`timer-section-${classId}`);
-  if (timerSection) {
-    timerSection.style.display = 'none';
-  }
-  
+
+  clearInterval(state.activeTimers[classId].intervalId);
   delete state.activeTimers[classId];
-  
-  // Clear passcode from database
+
+  const timerSection = document.getElementById(`timer-section-${classId}`);
+  if (timerSection) timerSection.style.display = 'none';
+
+  // Clear password in DB
   try {
     await apiFetch(API.updatePasscode(classId), {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passcode: null, duration: 0 }),
+      body:    JSON.stringify({ passcode: null, duration: 0 }),
     });
   } catch (err) {
     console.error('Failed to clear passcode:', err);
   }
-  
-  showToast('Passcode stopped.', 'info');
+
+  // Mark the active session as ended
+  try {
+    const sessions = await apiFetch('/api/attendance-sessions');
+    const active = (sessions.sessions || []).find(
+      s => s.class_id == classId && s.is_active !== false
+    );
+    if (active) {
+      await apiFetch(`/api/attendance-sessions/${active.id}/stop`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  } catch {}
+
+  showToast('Session stopped — passcode cleared.', 'info');
+  loadSessions();
 }
 
 // ===========================
@@ -2330,22 +2350,22 @@ async function loadSessions() {
 }
 async function endSession(sessionId, classId) {
   try {
-    // 1. Mark session as inactive in DB
+    // 1. Stop session in DB — this also clears password server-side now
     await apiFetch(`/api/attendance-sessions/${sessionId}/stop`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
     });
 
-    // 2. Clear the passcode from the class if classId is known
+    // 2. Also clear passcode via the dedicated endpoint (belt and suspenders)
     if (classId) {
       await apiFetch(API.updatePasscode(classId), {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ passcode: null, duration: 0 }),
-      }).catch(() => {}); // non-fatal
+      }).catch(() => {});
     }
 
-    // 3. Stop any running frontend timer
+    // 3. Stop frontend timer if running
     if (classId && state.activeTimers[classId]) {
       clearInterval(state.activeTimers[classId].intervalId);
       delete state.activeTimers[classId];
@@ -2353,8 +2373,8 @@ async function endSession(sessionId, classId) {
       if (timerSection) timerSection.style.display = 'none';
     }
 
-    showToast('Session ended.', 'info');
-    loadSessions(); // refresh the list
+    showToast('Session ended — passcode cleared.', 'info');
+    loadSessions();
   } catch (err) {
     showToast('Failed to end session: ' + err.message, 'error');
   }
@@ -2578,12 +2598,30 @@ function startSubjectSession(classId, className, subjectId, subjectName) {
               clearInterval(state.activeTimers[classId].intervalId);
               timerSection.style.display = 'none';
               delete state.activeTimers[classId];
+
+              // Clear password in DB when timer expires
               await apiFetch(API.updatePasscode(classId), {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({ passcode: null, duration: 0 }),
               }).catch(() => {});
-              showToast('Session expired.', 'info');
+
+              // Also mark the active session as inactive
+              try {
+                const sessions = await apiFetch('/api/attendance-sessions');
+                const active = (sessions.sessions || []).find(
+                  s => s.class_id == classId && s.is_active !== false
+                );
+                if (active) {
+                  await apiFetch(`/api/attendance-sessions/${active.id}/stop`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                  });
+                }
+              } catch {}
+
+              showToast('Session expired — passcode cleared.', 'info');
+              loadSessions();
             }
           }, 1000);
         }
@@ -3088,4 +3126,711 @@ window.saveTeacherProfile = async function() {
       showToast('Failed to save profile: ' + err.message, 'error');
     }
   });
+}// =====================================================================
+// ATTENDANCE IMPORT — Excel/CSV upload with preview & student matching
+// =====================================================================
+
+function openImportModal(cls, subject) {
+  const existing = document.getElementById('attImportModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'attImportModal';
+  modal.style.cssText = `
+    position:fixed;inset:0;background:rgba(11,18,32,.85);backdrop-filter:blur(6px);
+    z-index:1400;display:flex;align-items:center;justify-content:center;padding:20px`;
+
+  modal.innerHTML = `
+    <style>
+      #attImportModal * { box-sizing:border-box; }
+      .imp-panel {
+        background:var(--dark-800,#111d30);
+        border:1px solid rgba(79,172,254,.2);
+        border-radius:16px;
+        width:100%;max-width:900px;
+        max-height:90vh;
+        display:flex;flex-direction:column;
+        box-shadow:0 24px 64px rgba(11,18,32,.6);
+        overflow:hidden;
+      }
+      .imp-header {
+        padding:20px 24px;
+        border-bottom:1px solid rgba(79,172,254,.15);
+        display:flex;align-items:center;justify-content:space-between;
+        background:rgba(79,172,254,.04);
+        flex-shrink:0;
+      }
+      .imp-body { flex:1;overflow-y:auto;padding:24px; }
+      .imp-footer {
+        padding:16px 24px;
+        border-top:1px solid rgba(79,172,254,.15);
+        display:flex;gap:10px;justify-content:flex-end;
+        flex-shrink:0;
+        background:rgba(79,172,254,.04);
+      }
+      .imp-drop-zone {
+        border:2px dashed rgba(79,172,254,.3);
+        border-radius:12px;
+        padding:48px 24px;
+        text-align:center;
+        cursor:pointer;
+        transition:all .2s;
+        background:rgba(79,172,254,.03);
+      }
+      .imp-drop-zone:hover, .imp-drop-zone.drag-over {
+        border-color:rgba(79,172,254,.7);
+        background:rgba(79,172,254,.08);
+      }
+      .imp-drop-icon {
+        width:56px;height:56px;border-radius:14px;
+        background:rgba(79,172,254,.12);
+        display:grid;place-items:center;
+        margin:0 auto 16px;
+      }
+      .imp-table-wrap {
+        overflow:auto;
+        border:1px solid rgba(79,172,254,.15);
+        border-radius:10px;
+        max-height:400px;
+      }
+      .imp-table {
+        width:max-content;min-width:100%;
+        border-collapse:collapse;
+        font-size:12.5px;
+      }
+      .imp-table th {
+        background:rgba(79,172,254,.08);
+        padding:10px 14px;
+        text-align:left;
+        font-size:10px;font-weight:800;
+        color:rgba(79,172,254,.8);
+        text-transform:uppercase;letter-spacing:.07em;
+        border-bottom:1px solid rgba(79,172,254,.15);
+        white-space:nowrap;
+        position:sticky;top:0;z-index:2;
+      }
+      .imp-table td {
+        padding:9px 14px;
+        border-bottom:1px solid rgba(79,172,254,.08);
+        color:#e8f2ff;
+        vertical-align:middle;
+      }
+      .imp-table tbody tr:hover td { background:rgba(79,172,254,.06); }
+      .imp-table tbody tr:last-child td { border-bottom:none; }
+      .imp-status-badge {
+        display:inline-flex;align-items:center;gap:4px;
+        padding:3px 9px;border-radius:999px;
+        font-size:11px;font-weight:700;
+      }
+      .imp-badge-present { background:rgba(34,197,94,.15);color:#22c55e; }
+      .imp-badge-absent  { background:rgba(239,68,68,.15);color:#ef4444; }
+      .imp-badge-late    { background:rgba(245,158,11,.15);color:#f59e0b; }
+      .imp-badge-unknown { background:rgba(79,172,254,.12);color:rgba(79,172,254,.7); }
+      .imp-match-select {
+        padding:5px 8px;
+        border:1px solid rgba(79,172,254,.2);
+        border-radius:6px;
+        background:var(--dark-700,#1a2d47);
+        color:#e8f2ff;
+        font-size:12px;
+        outline:none;
+        max-width:180px;
+      }
+      .imp-match-select:focus { border-color:rgba(79,172,254,.5); }
+      .imp-cell-edit {
+        padding:5px 8px;
+        border:1px solid rgba(79,172,254,.2);
+        border-radius:6px;
+        background:var(--dark-700,#1a2d47);
+        color:#e8f2ff;
+        font-size:12px;
+        outline:none;
+        width:100px;
+      }
+      .imp-cell-edit:focus { border-color:rgba(79,172,254,.5); }
+      .imp-btn {
+        display:inline-flex;align-items:center;gap:6px;
+        padding:9px 18px;border-radius:8px;
+        font-size:13px;font-weight:700;cursor:pointer;
+        transition:all .15s;border:none;
+      }
+      .imp-btn-primary {
+        background:linear-gradient(135deg,#4facfe 0%,#0a6dd9 100%);
+        color:#fff;
+        box-shadow:0 4px 14px rgba(79,172,254,.35);
+      }
+      .imp-btn-primary:hover { background:linear-gradient(135deg,#6fbeff 0%,#1a80e8 100%); }
+      .imp-btn-primary:disabled { opacity:.5;cursor:not-allowed; }
+      .imp-btn-ghost {
+        background:rgba(79,172,254,.08);
+        color:rgba(79,172,254,.8);
+        border:1px solid rgba(79,172,254,.2);
+      }
+      .imp-btn-ghost:hover { background:rgba(79,172,254,.15);color:#e8f2ff; }
+      .imp-step-indicator {
+        display:flex;align-items:center;gap:8px;
+        margin-bottom:20px;
+      }
+      .imp-step {
+        display:flex;align-items:center;gap:6px;
+        font-size:12px;font-weight:600;
+        color:rgba(79,172,254,.4);
+      }
+      .imp-step.active { color:rgba(79,172,254,.9); }
+      .imp-step.done   { color:#22c55e; }
+      .imp-step-num {
+        width:22px;height:22px;border-radius:50%;
+        border:1.5px solid currentColor;
+        display:grid;place-items:center;
+        font-size:10px;font-weight:800;
+        flex-shrink:0;
+      }
+      .imp-step-sep { flex:1;height:1px;background:rgba(79,172,254,.15);max-width:40px; }
+      .imp-summary-box {
+        background:rgba(34,197,94,.08);
+        border:1px solid rgba(34,197,94,.25);
+        border-radius:10px;
+        padding:16px 20px;
+        margin-bottom:20px;
+      }
+    </style>
+
+    <div class="imp-panel">
+      <div class="imp-header">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:38px;height:38px;border-radius:10px;background:rgba(79,172,254,.12);
+                      display:grid;place-items:center;flex-shrink:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(79,172,254,.9)"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="7 10 12 5 17 10"/>
+              <line x1="12" y1="5" x2="12" y2="17"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size:15px;font-weight:800;color:#e8f2ff">Import Attendance</div>
+            <div style="font-size:11px;color:rgba(79,172,254,.6);margin-top:1px">
+              ${escapeHTML(subject.subject)} · ${escapeHTML(cls.class_name)}
+            </div>
+          </div>
+        </div>
+        <button onclick="document.getElementById('attImportModal').remove()"
+          style="border:none;background:none;font-size:22px;color:rgba(79,172,254,.5);cursor:pointer;
+                 padding:4px;border-radius:6px;transition:color .15s"
+          onmouseover="this.style.color='#e8f2ff'" onmouseout="this.style.color='rgba(79,172,254,.5)'">×</button>
+      </div>
+
+      <div class="imp-body">
+        <!-- Step indicators -->
+        <div class="imp-step-indicator">
+          <div class="imp-step active" id="impStep1Indicator">
+            <div class="imp-step-num">1</div><span>Upload File</span>
+          </div>
+          <div class="imp-step-sep"></div>
+          <div class="imp-step" id="impStep2Indicator">
+            <div class="imp-step-num">2</div><span>Review & Match</span>
+          </div>
+          <div class="imp-step-sep"></div>
+          <div class="imp-step" id="impStep3Indicator">
+            <div class="imp-step-num">3</div><span>Confirm Import</span>
+          </div>
+        </div>
+
+        <!-- Step 1: Upload -->
+        <div id="impStep1">
+          <div class="imp-drop-zone" id="impDropZone" onclick="document.getElementById('impFileInput').click()">
+            <div class="imp-drop-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(79,172,254,.8)"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <div style="font-size:15px;font-weight:700;color:#e8f2ff;margin-bottom:6px">
+              Drop your file here or click to browse
+            </div>
+            <div style="font-size:12px;color:rgba(79,172,254,.5)">
+              Supports .CSV and .XLSX files
+            </div>
+            <input type="file" id="impFileInput" accept=".csv,.xlsx,.xls"
+                   style="display:none" onchange="handleImportFile(event)"/>
+          </div>
+
+          <div style="margin-top:20px;padding:16px;background:rgba(79,172,254,.05);
+                      border:1px solid rgba(79,172,254,.12);border-radius:10px">
+            <div style="font-size:12px;font-weight:700;color:rgba(79,172,254,.8);margin-bottom:10px">
+              📋 Expected Format
+            </div>
+            <div style="font-size:11.5px;color:rgba(79,172,254,.55);line-height:1.8">
+              Your file should have these columns (in any order):<br>
+              <span style="font-family:monospace;color:rgba(79,172,254,.75)">
+                Student Name</span> · 
+              <span style="font-family:monospace;color:rgba(79,172,254,.75)">Date</span> · 
+              <span style="font-family:monospace;color:rgba(79,172,254,.75)">Status</span>
+              (Present / Absent / Late)<br>
+              <span style="color:rgba(79,172,254,.4);font-size:11px">
+                Date can be any format: May 5, 2025 · 2025-05-05 · 05/05/2025
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Review & Match -->
+        <div id="impStep2" style="display:none">
+          <div id="impPreviewContent"></div>
+        </div>
+
+        <!-- Step 3: Confirm -->
+        <div id="impStep3" style="display:none">
+          <div id="impConfirmContent"></div>
+        </div>
+      </div>
+
+      <div class="imp-footer">
+        <button class="imp-btn imp-btn-ghost" id="impBackBtn"
+                style="display:none" onclick="importGoBack()">← Back</button>
+        <button class="imp-btn imp-btn-ghost"
+                onclick="document.getElementById('attImportModal').remove()">Cancel</button>
+        <button class="imp-btn imp-btn-primary" id="impNextBtn"
+                style="display:none" onclick="importGoNext()">Review →</button>
+        <button class="imp-btn imp-btn-primary" id="impSaveBtn"
+                style="display:none" onclick="confirmImport()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Save to Attendance
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  // Drag and drop
+  const dropZone = document.getElementById('impDropZone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) processImportFile(file, cls, subject);
+  });
+
+  // Store refs
+  modal._cls = cls;
+  modal._subject = subject;
+}
+
+// ── Parse uploaded file ──────────────────────────────────────────────
+window._importData = { rows: [], cls: null, subject: null };
+
+function handleImportFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const modal = document.getElementById('attImportModal');
+  processImportFile(file, modal._cls, modal._subject);
+}
+
+function processImportFile(file, cls, subject) {
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'csv') {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const rows = parseCSV(e.target.result);
+      showImportPreview(rows, cls, subject);
+    };
+    reader.readAsText(file);
+  } else if (ext === 'xlsx' || ext === 'xls') {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        // Use SheetJS if available
+        if (typeof XLSX !== 'undefined') {
+          const wb = XLSX.read(e.target.result, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          showImportPreview(rows, cls, subject);
+        } else {
+          // Fallback: load SheetJS dynamically
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          script.onload = () => {
+            const wb = XLSX.read(e.target.result, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+            showImportPreview(rows, cls, subject);
+          };
+          document.head.appendChild(script);
+        }
+      } catch (err) {
+        showToast('Failed to read Excel file: ' + err.message, 'error');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    showToast('Unsupported file type. Please use CSV or XLSX.', 'error');
+  }
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  return lines.map(line => {
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    cols.push(cur.trim());
+    return cols;
+  });
+}
+
+function normalizeDate(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+
+  // Try native Date parse
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  // Try DD/MM/YYYY or MM/DD/YYYY
+  const parts = s.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    const [a, b, c] = parts.map(Number);
+    const guesses = [new Date(c, b - 1, a), new Date(c, a - 1, b)];
+    for (const g of guesses) {
+      if (!isNaN(g.getTime())) {
+        return g.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      }
+    }
+  }
+
+  return s; // Return raw if nothing works
+}
+
+function normalizeStatus(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (s === 'p' || s === 'present' || s === '1' || s === 'yes') return 'present';
+  if (s === 'a' || s === 'absent'  || s === '0' || s === 'no')  return 'absent';
+  if (s === 'l' || s === 'late')                                 return 'late';
+  return null;
+}
+
+// ── Show preview step ────────────────────────────────────────────────
+function showImportPreview(rawRows, cls, subject) {
+  if (!rawRows || rawRows.length < 2) {
+    showToast('File appears empty or unreadable.', 'error'); return;
+  }
+
+  // Auto-detect header row
+  const header = rawRows[0].map(h => String(h).trim().toLowerCase());
+  const nameCol   = header.findIndex(h => h.includes('name') || h.includes('student'));
+  const dateCol   = header.findIndex(h => h.includes('date'));
+  const statusCol = header.findIndex(h =>
+    h.includes('status') || h.includes('attendance') || h.includes('present') || h.includes('absent'));
+
+  if (nameCol === -1) {
+    showToast('Could not find "Student Name" column. Please check your file.', 'error'); return;
+  }
+
+  // Build parsed rows
+  const parsed = [];
+  for (let i = 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    if (!row || row.every(c => !String(c).trim())) continue;
+
+    const name   = String(row[nameCol] || '').trim();
+    const date   = dateCol   >= 0 ? normalizeDate(row[dateCol])   : null;
+    const status = statusCol >= 0 ? normalizeStatus(row[statusCol]) : null;
+
+    if (!name) continue;
+    parsed.push({ name, date, status, rawRow: row, idx: i });
+  }
+
+  if (parsed.length === 0) {
+    showToast('No valid rows found in file.', 'error'); return;
+  }
+
+  // Get existing enrolled students for matching
+  const enrolledStudents = [...new Set(
+    excelState.allRecords.map(r => ({ name: r.student_name, email: r.student_email }))
+  )];
+
+  // Store for later
+  window._importData = { rows: parsed, cls, subject, header, nameCol, dateCol, statusCol };
+
+  // Build preview table HTML
+  const statusBadge = s => {
+    if (!s) return '<span class="imp-status-badge imp-badge-unknown">—</span>';
+    const cls2 = s === 'present' ? 'imp-badge-present' : s === 'absent' ? 'imp-badge-absent' : 'imp-badge-late';
+    return `<span class="imp-status-badge ${cls2}">${s.charAt(0).toUpperCase() + s.slice(1)}</span>`;
+  };
+
+  // Build unique student list for matching dropdown
+  const uniqueNames = [...new Set(parsed.map(r => r.name))];
+
+  const matchOptions = (name) => {
+    const opts = enrolledStudents.map(s =>
+      `<option value="${escapeHTML(s.email)}"
+        ${s.name && s.name.toLowerCase() === name.toLowerCase() ? 'selected' : ''}>
+        ${escapeHTML(s.name || s.email)}
+      </option>`
+    ).join('');
+    return `<option value="">— No match —</option>${opts}`;
+  };
+
+  let previewHTML = `
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#e8f2ff">
+          ${parsed.length} records found
+        </div>
+        <div style="font-size:11.5px;color:rgba(79,172,254,.5);margin-top:2px">
+          Review each row. Edit status or date if needed, and match students to enrolled records.
+        </div>
+      </div>
+    </div>
+    <div class="imp-table-wrap">
+      <table class="imp-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Name in File</th>
+            <th>Match to Student</th>
+            <th>Date</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="impPreviewTableBody">
+          ${parsed.map((r, ri) => `
+            <tr data-idx="${ri}">
+              <td style="color:rgba(79,172,254,.4);font-family:monospace">${ri + 1}</td>
+              <td style="font-weight:600;color:#e8f2ff">${escapeHTML(r.name)}</td>
+              <td>
+                <select class="imp-match-select" data-row="${ri}" id="impMatch_${ri}">
+                  ${matchOptions(r.name)}
+                </select>
+              </td>
+              <td>
+                <input class="imp-cell-edit" type="text"
+                  value="${escapeHTML(r.date || '')}"
+                  placeholder="e.g. May 5, 2025"
+                  data-row="${ri}" id="impDate_${ri}"
+                  style="width:130px"/>
+              </td>
+              <td>
+                <select class="imp-match-select" data-row="${ri}" id="impStatus_${ri}"
+                        style="width:100px">
+                  <option value="">—</option>
+                  <option value="present" ${r.status === 'present' ? 'selected' : ''}>Present</option>
+                  <option value="absent"  ${r.status === 'absent'  ? 'selected' : ''}>Absent</option>
+                  <option value="late"    ${r.status === 'late'    ? 'selected' : ''}>Late</option>
+                </select>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  document.getElementById('impPreviewContent').innerHTML = previewHTML;
+
+  // Switch to step 2
+  document.getElementById('impStep1').style.display = 'none';
+  document.getElementById('impStep2').style.display = 'block';
+  document.getElementById('impStep1Indicator').className = 'imp-step done';
+  document.getElementById('impStep2Indicator').className = 'imp-step active';
+  document.getElementById('impNextBtn').style.display = 'flex';
+  document.getElementById('impBackBtn').style.display = 'flex';
+}
+
+function importGoBack() {
+  const step2 = document.getElementById('impStep2');
+  const step3 = document.getElementById('impStep3');
+  if (step3.style.display !== 'none') {
+    // Go back to step 2
+    step3.style.display = 'none';
+    step2.style.display = 'block';
+    document.getElementById('impStep2Indicator').className = 'imp-step active';
+    document.getElementById('impStep3Indicator').className = 'imp-step';
+    document.getElementById('impNextBtn').style.display = 'flex';
+    document.getElementById('impSaveBtn').style.display = 'none';
+  } else {
+    // Go back to step 1
+    step2.style.display = 'none';
+    document.getElementById('impStep1').style.display = 'block';
+    document.getElementById('impStep1Indicator').className = 'imp-step active';
+    document.getElementById('impStep2Indicator').className = 'imp-step';
+    document.getElementById('impNextBtn').style.display = 'none';
+    document.getElementById('impBackBtn').style.display = 'none';
+  }
+}
+
+function importGoNext() {
+  // Collect all edited values from step 2
+  const { rows } = window._importData;
+  const finalRows = [];
+  let warnings = 0;
+
+  rows.forEach((r, ri) => {
+    const matchedEmail = document.getElementById(`impMatch_${ri}`)?.value || '';
+    const date         = document.getElementById(`impDate_${ri}`)?.value.trim() || '';
+    const status       = document.getElementById(`impStatus_${ri}`)?.value || '';
+
+    if (!status) { warnings++; }
+
+    finalRows.push({
+      ...r,
+      matchedEmail,
+      date:   normalizeDate(date) || date,
+      status: status || null,
+    });
+  });
+
+  window._importData.finalRows = finalRows;
+
+  // Build confirm summary
+  const valid   = finalRows.filter(r => r.matchedEmail && r.status && r.date);
+  const noMatch = finalRows.filter(r => !r.matchedEmail);
+  const noStatus = finalRows.filter(r => !r.status);
+  const noDate  = finalRows.filter(r => !r.date);
+
+  const confirmHTML = `
+    <div class="imp-summary-box">
+      <div style="font-size:14px;font-weight:700;color:#22c55e;margin-bottom:10px">
+        ✓ Ready to import ${valid.length} record${valid.length !== 1 ? 's' : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#22c55e">${valid.length}</div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">Will be saved</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#f59e0b">${noMatch.length}</div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">No student match</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#ef4444">${noStatus.length + noDate.length}</div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">Missing data</div>
+        </div>
+      </div>
+    </div>
+
+    ${noMatch.length > 0 ? `
+      <div style="margin-bottom:16px;padding:12px 16px;background:rgba(245,158,11,.08);
+                  border:1px solid rgba(245,158,11,.2);border-radius:10px">
+        <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:6px">
+          ⚠ ${noMatch.length} row(s) without a student match — these will be skipped
+        </div>
+        ${noMatch.map(r => `
+          <div style="font-size:11.5px;color:rgba(245,158,11,.7);padding:2px 0">
+            • ${escapeHTML(r.name)} · ${escapeHTML(r.date || '—')}
+          </div>`).join('')}
+      </div>` : ''}
+
+    <div style="font-size:13px;font-weight:600;color:#e8f2ff;margin-bottom:12px">
+      Records to be saved:
+    </div>
+    <div class="imp-table-wrap" style="max-height:280px">
+      <table class="imp-table">
+        <thead>
+          <tr>
+            <th>Student</th>
+            <th>Date</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${valid.map(r => {
+            const sc = r.status === 'present' ? 'imp-badge-present' :
+                       r.status === 'absent'  ? 'imp-badge-absent'  : 'imp-badge-late';
+            return `<tr>
+              <td style="font-weight:600;color:#e8f2ff">${escapeHTML(r.name)}</td>
+              <td style="font-family:monospace;font-size:11.5px;color:rgba(79,172,254,.6)">
+                ${escapeHTML(r.date)}
+              </td>
+              <td>
+                <span class="imp-status-badge ${sc}">
+                  ${r.status.charAt(0).toUpperCase() + r.status.slice(1)}
+                </span>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  document.getElementById('impConfirmContent').innerHTML = confirmHTML;
+
+  // Switch to step 3
+  document.getElementById('impStep2').style.display = 'none';
+  document.getElementById('impStep3').style.display = 'block';
+  document.getElementById('impStep2Indicator').className = 'imp-step done';
+  document.getElementById('impStep3Indicator').className = 'imp-step active';
+  document.getElementById('impNextBtn').style.display = 'none';
+  document.getElementById('impSaveBtn').style.display = 'flex';
+}
+
+async function confirmImport() {
+  const { finalRows, cls, subject } = window._importData;
+  const saveBtn = document.getElementById('impSaveBtn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+  const valid = finalRows.filter(r => r.matchedEmail && r.status && r.date);
+  const subjectIdInt = Math.trunc(Number(subject.id));
+
+  let saved = 0, skipped = 0, failed = 0;
+
+  for (const row of valid) {
+    try {
+      // Find the record ID from existing records
+      const existing = excelState.allRecords.find(r => {
+        const ts = r.marked_at || r.created_at;
+        if (!ts) return false;
+        const d = new Date(ts);
+        const dStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return r.student_email === row.matchedEmail && dStr === row.date;
+      });
+
+      if (existing) {
+        // Update existing record
+        await apiFetch(`/api/attendance/${existing.id}`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ status: row.status }),
+        });
+        existing.status = row.status;
+        saved++;
+      } else {
+        // Need to insert new record via a new endpoint
+        // For now, use the bulk insert endpoint if available, else skip
+        skipped++;
+      }
+    } catch (err) {
+      console.warn('Import row failed:', row, err.message);
+      failed++;
+    }
+  }
+
+  // Refresh the grid
+  const wrap = document.getElementById('attendanceTableWrap');
+  if (wrap) wrap.dataset.records = JSON.stringify(excelState.allRecords);
+  rerenderGrid();
+
+  document.getElementById('attImportModal').remove();
+
+  if (failed === 0) {
+    showToast(`Import done! ${saved} updated, ${skipped} skipped (new records need manual entry).`, 'success');
+  } else {
+    showToast(`${saved} saved, ${skipped} skipped, ${failed} failed.`, 'info');
+  }
 }
