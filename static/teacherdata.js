@@ -1448,6 +1448,7 @@ const rows = students.map((st, ri) => {
                   <input
                     class="att-name-edit"
                     data-orig-email="${escapeHTML(st.email)}"
+                    data-orig-name="${escapeHTML(st.name)}"
                     value="${escapeHTML(st.name)}"
                     placeholder="Student name"
                     style="width:100%;padding:3px 6px;border:1.5px solid rgba(79,172,254,.3);
@@ -1574,49 +1575,48 @@ const rows = students.map((st, ri) => {
 async function saveAttendanceChanges() {
   const changes = excelState.pendingChanges;
 
-  // Collect student row edits (name + email)
-  const studentEdits = [];
-  document.querySelectorAll('.att-name-edit').forEach(nameInput => {
-    const origEmail  = nameInput.dataset.origEmail;
-    const emailInput = document.querySelector(`.att-email-edit[data-orig-email="${CSS.escape(origEmail)}"]`);
-    const newName    = nameInput.value.trim();
-    const newEmail   = emailInput ? emailInput.value.trim() : '';
-    const selectedOption = emailInput ? emailInput.options[emailInput.selectedIndex] : null;
-    const linkedName = selectedOption && newEmail
-      ? selectedOption.text.split(' — ')[0].trim()
-      : null;
+ // Collect student row edits (name + email)
+const studentEdits = [];
+document.querySelectorAll('.att-name-edit').forEach(nameInput => {
+  const row          = nameInput.closest('tr');
+  const emailSelect  = row ? row.querySelector('.att-email-edit') : null;
+  const origEmail    = nameInput.dataset.origEmail || '';
+  const origNameAttr = nameInput.dataset.origName  || '';
+  const newName      = nameInput.value.trim();
+  const newEmail     = emailSelect ? emailSelect.value.trim() : '';
+  const selectedOption = emailSelect ? emailSelect.options[emailSelect.selectedIndex] : null;
+  const linkedName   = selectedOption && newEmail
+    ? selectedOption.text.split(' — ')[0].trim()
+    : null;
 
-    // FIX 2: match by student_name first, then fall back to email for linked students
-    const origName = (() => {
-      // origEmail is the data-orig-email attr — it may be a real email or a name-based placeholder
-      if (isRealEmail(origEmail)) {
-        const rec = excelState.allRecords.find(r => r.student_email === origEmail);
-        return (rec?.student_name || '').toLowerCase().trim();
-      }
-      return (origEmail || '').toLowerCase().trim();
-    })();
-
-    const affected = excelState.allRecords.filter(r => {
-      const recName = (r.student_name || '').toLowerCase().trim();
-      if (origName && recName === origName) return true;
-      if (isRealEmail(origEmail) && r.student_email === origEmail) return true;
-      return false;
-    });
-
-    if (affected.length > 0) {
-      const origName = affected[0].student_name || origEmail;
-      const hasNameChange  = newName  && newName  !== origName;
-      const hasEmailChange = newEmail && newEmail !== origEmail;
-      if (hasNameChange || hasEmailChange) {
-        studentEdits.push({
-          origEmail,
-          newName:  linkedName || newName || origName,
-          newEmail: newEmail || null,
-          affected
-        });
-      }
+  // Find affected records — by email for linked, by name for unlinked
+  const affected = excelState.allRecords.filter(r => {
+    const recName  = (r.student_name  || '').toLowerCase().trim();
+    const recEmail = (r.student_email || '').toLowerCase().trim();
+    if (isRealEmail(origEmail)) {
+      return recEmail === origEmail.toLowerCase().trim();
     }
+    return origNameAttr && recName === origNameAttr.toLowerCase().trim();
   });
+
+  if (affected.length === 0) return;
+
+  const displayName   = affected[0].student_name || origNameAttr;
+  const storedEmail   = (affected[0].student_email || '').trim().toLowerCase();
+  const incomingEmail = newEmail.trim().toLowerCase();
+
+  const hasNameChange  = newName.trim() !== displayName.trim();
+  const hasEmailChange = incomingEmail !== '' && incomingEmail !== storedEmail;
+
+  if (hasNameChange || hasEmailChange) {
+    studentEdits.push({
+      origEmail,
+      newName:  linkedName || newName || displayName,
+      newEmail: newEmail || null,
+      affected,
+    });
+  }
+});
 
   if (Object.keys(changes).length === 0 && studentEdits.length === 0) {
     showToast('No changes to save.', 'info');
@@ -1721,7 +1721,6 @@ async function saveAttendanceChanges() {
         r.student_name = edit.newName;
         if (edit.newEmail) {
           r.student_email = edit.newEmail;
-          r.student_id    = edit.newEmail;
         }
       });
       saved++;
