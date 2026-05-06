@@ -27,7 +27,14 @@ const API = {
 // ===========================
 // UTILITIES
 // ===========================
-
+function toDisplayDate(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (isNaN(d)) return null;
+  // Use UTC values to avoid timezone shift on date-only strings like "2025-05-01"
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
 function escapeHTML(str) {
   if (!str) return '';
   const d = document.createElement('div');
@@ -430,17 +437,19 @@ function fmtTimeRange(start, end) {
 // ── State for the Excel grid ──────────────────────────────────────────
 const excelState = {
   isEditMode: false,
-  pendingChanges: {},   // { "email|dateKey": newStatus }
-  allRecords: [],       // raw records from server
+  pendingChanges: {},
+  allRecords: [],
   classRef: null,
   subjectRef: null,
+  enrolledStudents: [], // { name, email } from DB
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────
 function statusCycle(current) {
-  if (!current || current === 'absent') return 'present';
+  if (!current || current === '' || current === 'na') return 'present';
   if (current === 'present') return 'absent';
-  if (current === 'late') return 'present';
+  if (current === 'absent')  return 'late';
+  if (current === 'late')    return 'na';
   return 'present';
 }
 
@@ -464,14 +473,20 @@ function getAvatarColor(index) {
 
 function cellStyle(status) {
   const map = {
-    present: { bg: 'rgba(34,197,94,.15)', color: '#22c55e', border: 'rgba(34,197,94,.3)' },
-    absent:  { bg: 'rgba(239,68,68,.15)', color: '#ef4444', border: 'rgba(239,68,68,.3)' },
-    late:    { bg: 'rgba(245,158,11,.15)', color: '#f59e0b', border: 'rgba(245,158,11,.3)' },
-    null:    { bg: 'var(--dark-700)', color: 'var(--text-sub)', border: 'rgba(79,172,254,.12)' },
+    present: { bg: 'rgba(34,197,94,.15)',   color: '#22c55e', border: 'rgba(34,197,94,.3)' },
+    absent:  { bg: 'rgba(239,68,68,.15)',   color: '#ef4444', border: 'rgba(239,68,68,.3)' },
+    late:    { bg: 'rgba(245,158,11,.15)',  color: '#f59e0b', border: 'rgba(245,158,11,.3)' },
+    na:      { bg: 'rgba(100,116,139,.12)', color: '#94a3b8', border: 'rgba(100,116,139,.2)' },
+    null:    { bg: 'var(--dark-700)',        color: 'var(--text-sub)', border: 'rgba(79,172,254,.12)' },
   };
   return map[status] || map.null;
 }
-
+// Helper to check if a string is a real email
+function isRealEmail(str) {
+  if (!str || str === 'null') return false;
+  if (str.endsWith('@unlinked')) return false;
+  return str.includes('@') && str.includes('.');
+}
 function fmtColDate(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d)) return { day: dateStr, mon: '', year: '' };
@@ -491,6 +506,11 @@ function openAttendanceView(cls, subject) {
   excelState.subjectRef = subject;
   excelState.isEditMode = false;
   excelState.pendingChanges = {};
+excelState.enrolledStudents = []; // reset
+// Fetch enrolled students for this subject
+apiFetch(`/api/enrolled-students/${cls.id}/${subject.id}`)
+  .then(data => { excelState.enrolledStudents = data.students || []; })
+  .catch(() => {});
 
   let panel = document.getElementById('attendancePanel');
   if (!panel) {
@@ -642,9 +662,8 @@ function openAttendanceView(cls, subject) {
         font-size: 13px;
         outline: none;
         width: 260px;
-        background: var(--dark-700);
+        background: var(--dark-700) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2374a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 12px center;
         color: #e8f2ff;
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2374a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 12px center;
         transition: border .15s, box-shadow .15s;
       }
       .att-search-input::placeholder { color: var(--text-sub); }
@@ -775,7 +794,7 @@ function openAttendanceView(cls, subject) {
         align-items: center;
         gap: 10px;
         padding: 10px 16px;
-        height: 52px;
+        min-height: 52px;
         box-sizing: border-box;
       }
       .att-avatar {
@@ -1045,6 +1064,7 @@ function closeAttendanceView() {
   const panel = document.getElementById('attendancePanel');
   if (panel) panel.style.display = 'none';
   state.currentView = 'dashboard';
+  loadClasses().catch(console.error);
 }
 
 function syncEditModeUI() {
@@ -1112,7 +1132,7 @@ function renderEmptyAttendanceTable() {
   const placeholderDates = Array.from({ length: 5 }, (_, i) => {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return toDisplayDate(d);
   });
 
   // Generate 4 ghost student rows
@@ -1239,10 +1259,10 @@ function applyAttendanceFilters() {
       const ts = r.marked_at || r.created_at;
       if (!ts) return false;
       const d = new Date(ts);
-      const local = d.getFullYear() + '-'
-        + String(d.getMonth() + 1).padStart(2, '0') + '-'
-        + String(d.getDate()).padStart(2, '0');
-      return local === dateFilter;
+      const recDate = d.getUTCFullYear() + '-'
+        + String(d.getUTCMonth() + 1).padStart(2, '0') + '-'
+        + String(d.getUTCDate()).padStart(2, '0');
+      return recDate === dateFilter;
     });
   }
 
@@ -1274,38 +1294,56 @@ function renderAttendanceTable(records) {
   const wrap = document.getElementById('attendanceTableWrap');
   if (!wrap) return;
 
-  // ── Build pivot ──────────────────────────────────────────────────
-  const studentMap = new Map();
-  const dateSet    = new Set();
+// ── Build pivot ──────────────────────────────────────────────────
+const studentMap = new Map();
+const dateSet    = new Set();
 
-  records.forEach(r => {
-    const key  = r.student_email || r.student_name || 'unknown';
-    const ts   = r.marked_at || r.created_at;
-    const dObj = ts ? new Date(ts) : null;
-    const dStr = dObj
-      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : null;
-    if (!studentMap.has(key)) {
-      studentMap.set(key, { name: r.student_name || key, email: key });
+records.forEach(r => {
+  const ts   = r.marked_at || r.created_at;
+  const dStr = toDisplayDate(ts);
+
+  // Group by name (lowercase) as the merge key
+  const nameKey = (r.student_name || '').toLowerCase().trim();
+  if (!nameKey) return;
+
+  if (!studentMap.has(nameKey)) {
+    studentMap.set(nameKey, {
+      name:   r.student_name,
+      email:  r.student_email || '',
+      // track all emails this name appears under
+      emails: new Set(),
+    });
+  }
+
+  const entry = studentMap.get(nameKey);
+
+  // Prefer a real email over unlinked/null
+  if (isRealEmail(r.student_email) && !isRealEmail(entry.email)) {
+    entry.email = r.student_email;
+  }
+  entry.emails.add(r.student_email || nameKey);
+
+  if (dStr) dateSet.add(dStr);
+});
+
+const dates    = [...dateSet].sort((a, b) => new Date(a) - new Date(b));
+const students = [...studentMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+// Lookup: "nameKey|dateStr" → status
+// Merge all records for the same name across all their emails
+const lookup = {};
+records.forEach(r => {
+  const ts     = r.marked_at || r.created_at;
+  const dStr   = toDisplayDate(ts);
+  const nameKey = (r.student_name || '').toLowerCase().trim();
+  if (dStr && nameKey) {
+    const lookupKey = `${nameKey}|${dStr}`;
+    // Don't overwrite a real status with a weaker one
+    if (!lookup[lookupKey] || lookup[lookupKey] === 'na') {
+      lookup[lookupKey] = r.status;
     }
-    if (dStr) dateSet.add(dStr);
-  });
-
-  const dates    = [...dateSet].sort((a, b) => new Date(a) - new Date(b));
-  const students = [...studentMap.values()].sort((a, b) => a.name.localeCompare(b.name));
-
-  // Lookup: "email|dateStr" → status
-  const lookup = {};
-  records.forEach(r => {
-    const key  = r.student_email || r.student_name || 'unknown';
-    const ts   = r.marked_at || r.created_at;
-    const dObj = ts ? new Date(ts) : null;
-    const dStr = dObj
-      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : null;
-    if (dStr) lookup[`${key}|${dStr}`] = r.status;
-  });
-
+  }
+});
   const isEdit = excelState.isEditMode;
 
   // ── Column headers ───────────────────────────────────────────────
@@ -1322,22 +1360,23 @@ function renderAttendanceTable(records) {
   }).join('');
 
   // ── Student rows ─────────────────────────────────────────────────
-  const rows = students.map((st, ri) => {
-    const initL = (st.name || '?')[0].toUpperCase();
-    const av    = getAvatarColor(ri);
-    const evenBg = ri % 2 === 0 ? 'var(--dark-900)' : 'var(--dark-800)';
+const rows = students.map((st, ri) => {
+  const nameKey = st.name.toLowerCase().trim();   // ← add this
+  const initL = (st.name || '?')[0].toUpperCase();
+  const av    = getAvatarColor(ri);
+  const evenBg = ri % 2 === 0 ? 'var(--dark-900)' : 'var(--dark-800)';
 
-    // Compute summary
-    let p = 0, a = 0, l = 0;
-    dates.forEach(d => {
-      const key = `${st.email}|${d}`;
-      const s   = excelState.pendingChanges[key] !== undefined
-        ? excelState.pendingChanges[key]
-        : lookup[key];
-      if (s === 'present') p++;
-      else if (s === 'absent') a++;
-      else if (s === 'late') l++;
-    });
+  // Compute summary — use nameKey
+  let p = 0, a = 0, l = 0;
+  dates.forEach(d => {
+    const key = `${nameKey}|${d}`;
+    const s   = excelState.pendingChanges[key] !== undefined
+      ? excelState.pendingChanges[key]
+      : lookup[key];
+    if (s === 'present') p++;
+    else if (s === 'absent') a++;
+    else if (s === 'late') l++;
+  });
     const total  = p + a + l;
     const pct    = total ? Math.round((p / total) * 100) : 0;
     const rateColor = pct >= 80 ? '#059669' : pct >= 60 ? '#d97706' : '#dc2626';
@@ -1353,15 +1392,20 @@ function renderAttendanceTable(records) {
       <div class="att-rate-breakdown">${breakdownParts.join(' · ')}</div>`;
 
     // Per-date cells
+    // Per-date cells
     const cells = dates.map((d, ci) => {
-      const lookupKey = `${st.email}|${d}`;
+  // Always use nameKey for consistent merged lookup
+  const lookupKey = `${nameKey}|${d}`;
+
       const status = excelState.pendingChanges[lookupKey] !== undefined
         ? excelState.pendingChanges[lookupKey]
         : lookup[lookupKey];
 
       const s = cellStyle(status);
-      const label = status
-        ? status.charAt(0).toUpperCase() + status.slice(1)
+      const label = status === 'present' ? 'Present'
+        : status === 'absent'  ? 'Absent'
+        : status === 'late'    ? 'Late'
+        : status === 'na'      ? 'N/A'
         : '—';
 
       const hasPending = excelState.pendingChanges[lookupKey] !== undefined;
@@ -1376,13 +1420,12 @@ function renderAttendanceTable(records) {
         <td class="att-td-cell" style="background:${evenBg}">
           <div class="att-cell-inner${editableClass}"
             style="background:${s.bg};color:${s.color};height:52px;position:relative;"
-            ${isEdit ? `data-key="${lookupKey}" data-status="${status || ''}"` : ''}>
+            ${isEdit ? `data-key="${escapeHTML(lookupKey)}" data-status="${status || 'na'}"` : ''}>
             ${label}
             ${pendingDot}
           </div>
         </td>`;
     }).join('');
-
     return `
       <tr data-search="${escapeHTML((st.name + ' ' + st.email).toLowerCase())}"
           style="background:${evenBg}">
@@ -1391,9 +1434,46 @@ function renderAttendanceTable(records) {
             <div class="att-avatar" style="background:${av.bg};color:${av.text}">
               ${initL}
             </div>
-            <div style="min-width:0">
-              <div class="att-student-name">${escapeHTML(st.name)}</div>
-              <div class="att-student-email">${escapeHTML(st.email)}</div>
+            <div style="min-width:0;flex:1">
+              ${isEdit ? (() => {
+                const isUnlinked = !st.email || st.email.startsWith('import_');
+                const enrolled   = excelState.enrolledStudents;
+                const opts = enrolled.map(s =>
+                  `<option value="${escapeHTML(s.email)}"
+                    ${s.email === st.email ? 'selected' : ''}>
+                    ${escapeHTML(s.name)} — ${escapeHTML(s.email)}
+                  </option>`
+                ).join('');
+                return `
+                  <input
+                    class="att-name-edit"
+                    data-orig-email="${escapeHTML(st.email)}"
+                    value="${escapeHTML(st.name)}"
+                    placeholder="Student name"
+                    style="width:100%;padding:3px 6px;border:1.5px solid rgba(79,172,254,.3);
+                           border-radius:5px;background:rgba(79,172,254,.08);color:#e8f2ff;
+                           font-size:12px;font-weight:600;outline:none;margin-bottom:4px;
+                           box-sizing:border-box"
+                  />
+                  <div style="position:relative">
+                    <select
+                      class="att-email-edit"
+                      data-orig-email="${escapeHTML(st.email)}"
+                      style="width:100%;padding:3px 6px;border:1.5px solid ${isUnlinked ? 'rgba(245,158,11,.4)' : 'rgba(79,172,254,.2)'};
+                             border-radius:5px;background:${isUnlinked ? 'rgba(245,158,11,.08)' : 'rgba(79,172,254,.05)'};
+                             color:${isUnlinked ? '#f59e0b' : 'rgba(79,172,254,.8)'};
+                             font-size:10px;font-family:monospace;outline:none;
+                             box-sizing:border-box;cursor:pointer;appearance:auto">
+                      <option value="">— Keep unlinked —</option>
+                      ${opts}
+                    </select>
+                  </div>`;
+              })() : `
+                <div class="att-student-name">${escapeHTML(st.name)}</div>
+                <div class="att-student-email" style="${!st.email || st.email.startsWith('import_') ? 'color:#f59e0b;font-style:italic' : ''}">
+                  ${!st.email || st.email.startsWith('import_') ? '⚠ unlinked' : escapeHTML(st.email)}
+                </div>
+              `}
             </div>
           </div>
         </td>
@@ -1420,12 +1500,16 @@ function renderAttendanceTable(records) {
         <span>Late</span>
       </div>
       <div class="att-legend-item">
+        <div class="att-legend-dot" style="background:rgba(100,116,139,.12);border-color:rgba(100,116,139,.2)"></div>
+        <span>N/A</span>
+      </div>
+      <div class="att-legend-item">
         <div class="att-legend-dot" style="background:#f1f5f9;border-color:#e2e8f0"></div>
         <span>—</span>
       </div>
       ${isEdit ? `<div class="att-legend-item" style="margin-left:6px">
         <span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>
-        <span>Unsaved change</span>
+        <span>Unsaved change · Click cell to cycle: Present → Absent → Late → N/A → Present</span>
       </div>` : ''}
     </div>`;
 
@@ -1449,19 +1533,26 @@ function renderAttendanceTable(records) {
   if (isEdit) {
     wrap.querySelectorAll('.att-cell-inner.editable').forEach(cell => {
       cell.addEventListener('click', () => {
-        const key    = cell.dataset.key;
-        const cur    = excelState.pendingChanges[key] !== undefined
+        const key = cell.dataset.key;
+        const cur = excelState.pendingChanges[key] !== undefined
           ? excelState.pendingChanges[key]
           : (cell.dataset.status || null);
-        const next   = statusCycle(cur);
+        const next = statusCycle(cur);
+
+        // 'na' means delete/no record — store as empty string to signal deletion
         excelState.pendingChanges[key] = next;
 
         const s = cellStyle(next);
         cell.style.background = s.bg;
         cell.style.color      = s.color;
 
-        // Clear old text/dot, set new label
-        cell.innerHTML = next.charAt(0).toUpperCase() + next.slice(1);
+        const labelMap = {
+          present: 'Present',
+          absent:  'Absent',
+          late:    'Late',
+          na:      'N/A',
+        };
+        cell.innerHTML = labelMap[next] || '—';
 
         // Re-add pending dot
         const dot = document.createElement('span');
@@ -1482,7 +1573,52 @@ function renderAttendanceTable(records) {
 // ── Save edits back to server ─────────────────────────────────────────
 async function saveAttendanceChanges() {
   const changes = excelState.pendingChanges;
-  if (Object.keys(changes).length === 0) {
+
+  // Collect student row edits (name + email)
+  const studentEdits = [];
+  document.querySelectorAll('.att-name-edit').forEach(nameInput => {
+    const origEmail  = nameInput.dataset.origEmail;
+    const emailInput = document.querySelector(`.att-email-edit[data-orig-email="${CSS.escape(origEmail)}"]`);
+    const newName    = nameInput.value.trim();
+    const newEmail   = emailInput ? emailInput.value.trim() : '';
+    const selectedOption = emailInput ? emailInput.options[emailInput.selectedIndex] : null;
+    const linkedName = selectedOption && newEmail
+      ? selectedOption.text.split(' — ')[0].trim()
+      : null;
+
+    // FIX 2: match by student_name first, then fall back to email for linked students
+    const origName = (() => {
+      // origEmail is the data-orig-email attr — it may be a real email or a name-based placeholder
+      if (isRealEmail(origEmail)) {
+        const rec = excelState.allRecords.find(r => r.student_email === origEmail);
+        return (rec?.student_name || '').toLowerCase().trim();
+      }
+      return (origEmail || '').toLowerCase().trim();
+    })();
+
+    const affected = excelState.allRecords.filter(r => {
+      const recName = (r.student_name || '').toLowerCase().trim();
+      if (origName && recName === origName) return true;
+      if (isRealEmail(origEmail) && r.student_email === origEmail) return true;
+      return false;
+    });
+
+    if (affected.length > 0) {
+      const origName = affected[0].student_name || origEmail;
+      const hasNameChange  = newName  && newName  !== origName;
+      const hasEmailChange = newEmail && newEmail !== origEmail;
+      if (hasNameChange || hasEmailChange) {
+        studentEdits.push({
+          origEmail,
+          newName:  linkedName || newName || origName,
+          newEmail: newEmail || null,
+          affected
+        });
+      }
+    }
+  });
+
+  if (Object.keys(changes).length === 0 && studentEdits.length === 0) {
     showToast('No changes to save.', 'info');
     excelState.isEditMode = false;
     syncEditModeUI();
@@ -1493,44 +1629,109 @@ async function saveAttendanceChanges() {
   const saveBtn = document.getElementById('attSaveBtn');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
 
-  const updates = [];
-  for (const [key, newStatus] of Object.entries(changes)) {
-    const pipeIdx  = key.lastIndexOf('|');
-    const email    = key.slice(0, pipeIdx);
-    const dateStr  = key.slice(pipeIdx + 1);
-    updates.push({ email, dateStr, newStatus });
-  }
-
   let saved = 0, failed = 0;
 
-  for (const upd of updates) {
+  // ── Save status cell changes ──────────────────────────────────────
+  for (const [key, newStatus] of Object.entries(changes)) {
+    const pipeIdx = key.lastIndexOf('|');
+    const nameKey = key.slice(0, pipeIdx);   // FIX 1: was misleadingly named `email`
+    const dateStr = key.slice(pipeIdx + 1);
+
     try {
       const matchDate = (r) => {
         const ts = r.marked_at || r.created_at;
         if (!ts) return false;
         const d = new Date(ts);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) === upd.dateStr;
+        return toDisplayDate(d) === dateStr;
       };
-      const record = excelState.allRecords.find(r =>
-        (r.student_email === upd.email || r.student_name === upd.email) && matchDate(r)
-      );
+
+      const record = excelState.allRecords.find(r => {
+        if (!matchDate(r)) return false;
+        return (r.student_name || '').toLowerCase().trim() === nameKey.toLowerCase().trim();
+      });
+
       if (record) {
-        await apiFetch(`/api/attendance/${record.id}`, {
-          method:  'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ status: upd.newStatus }),
-        });
-        record.status = upd.newStatus;
+        if (newStatus === 'na') {
+          await apiFetch(`/api/attendance/${record.id}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const idx = excelState.allRecords.findIndex(r => r.id === record.id);
+          if (idx !== -1) excelState.allRecords.splice(idx, 1);
+        } else {
+          await apiFetch(`/api/attendance/${record.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus }),
+          });
+          record.status = newStatus;
+        }
         saved++;
       } else {
-        failed++;
+        if (newStatus === 'na') {
+          saved++; // nothing to do
+        } else {
+          const anyRecord = excelState.allRecords.find(r =>
+            (r.student_name || '').toLowerCase().trim() === nameKey.toLowerCase().trim()
+          );
+          const studentName  = anyRecord?.student_name || nameKey;
+          const studentEmail = isRealEmail(anyRecord?.student_email)
+            ? anyRecord.student_email
+            : null;
+
+          const newRecord = await apiFetch('/api/attendance/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              classId:     excelState.classRef.id,
+              subjectId:   excelState.subjectRef.id,
+              studentName,
+              studentEmail,
+              date:        dateStr,
+              status:      newStatus,
+              room:        excelState.subjectRef.room || '',
+              startTime:   excelState.subjectRef.start_time || '',
+              endTime:     excelState.subjectRef.end_time || '',
+            }),
+          });
+          if (newRecord?.record) excelState.allRecords.push(newRecord.record);
+          saved++;
+        }
       }
     } catch (e) {
-      console.warn('Failed to save change:', upd, e.message);
+      console.warn('Failed to save status change:', email, dateStr, e.message);
       failed++;
     }
   }
 
+  // ── Save student name/email edits ─────────────────────────────────
+  for (const edit of studentEdits) {
+    try {
+      await apiFetch('/api/attendance/update-student', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origEmail:  edit.origEmail,
+          newName:    edit.newName,
+          newEmail:   edit.newEmail,
+          recordIds:  edit.affected.map(r => r.id),
+        }),
+      });
+      edit.affected.forEach(r => {
+        r.student_name = edit.newName;
+        if (edit.newEmail) {
+          r.student_email = edit.newEmail;
+          r.student_id    = edit.newEmail;
+        }
+      });
+      saved++;
+    } catch (e) {
+      console.warn('Failed to save student edit:', edit, e.message);
+      failed++;
+    }
+  }
+
+  // ── Finish ────────────────────────────────────────────────────────
   const wrap = document.getElementById('attendanceTableWrap');
   if (wrap) wrap.dataset.records = JSON.stringify(excelState.allRecords);
 
@@ -1539,13 +1740,13 @@ async function saveAttendanceChanges() {
   syncEditModeUI();
   rerenderGrid();
 
-  if (failed === 0) {
-    showToast(`${saved} change(s) saved!`, 'success');
-  } else {
-    showToast(`${saved} saved, ${failed} couldn't be updated (no matching record).`, 'info');
-  }
-
   if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Changes'; }
+
+  if (failed === 0) {
+    showToast(saved > 0 ? `${saved} change(s) saved!` : 'No changes to save.', saved > 0 ? 'success' : 'info');
+  } else {
+    showToast(`${saved} saved, ${failed} failed.`, 'info');
+  }
 }
 
 // ── Export CSV ────────────────────────────────────────────────────────
@@ -1572,9 +1773,7 @@ function exportAttendanceCSV(cls, subject) {
     const key  = r.student_email || r.student_name || 'unknown';
     const ts   = r.marked_at || r.created_at;
     const dObj = ts ? new Date(ts) : null;
-    const dStr = dObj
-      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : null;
+    const dStr = toDisplayDate(ts);
     if (!studentMap.has(key)) studentMap.set(key, { name: r.student_name || key, email: key });
     if (dStr) dateSet.add(dStr);
   });
@@ -2930,24 +3129,26 @@ async function updateTeacherNotifications() {
 
 function updatePendingEnrollmentsBox(reqs) {
   let box = document.getElementById('pendingEnrollmentsBox');
-  
+
+  // FIX 5: use a stable anchor element instead of traversing .closest('.card')
+  // which breaks when the DOM structure changes.
   if (!box) {
     box = document.createElement('div');
     box.id = 'pendingEnrollmentsBox';
     box.className = 'card';
     box.style.cssText = 'margin-top: 20px; margin-bottom: 24px; overflow: hidden;';
-    
-    // Ilagay ang box direkta sa ilalim ng "My Classes"
-    const classList = document.getElementById('classList');
-    if (classList) {
-      const parentCard = classList.closest('.card') || classList;
-      if (parentCard.parentNode) {
-        parentCard.parentNode.insertBefore(box, parentCard.nextSibling);
-      }
-    } else {
-      const dashGrid = document.querySelector('.dash-grid');
-      if (dashGrid) {
-        dashGrid.appendChild(box);
+
+    // Prefer an explicit anchor div; fall back to appending inside dash-grid
+    const anchor = document.getElementById('pendingEnrollmentsAnchor')
+      || document.querySelector('.dash-grid');
+
+    if (anchor) {
+      // insertBefore the anchor placeholder if it exists, otherwise just append
+      const placeholder = document.getElementById('pendingEnrollmentsAnchor');
+      if (placeholder) {
+        placeholder.parentNode.insertBefore(box, placeholder);
+      } else {
+        anchor.appendChild(box);
       }
     }
   }
@@ -3002,7 +3203,10 @@ window.handleEnrollmentRequest = async function(id, action) {
     if (res.success) {
       showToast(action === 'approve' ? 'Student approved!' : 'Request rejected.', 'success');
       updateTeacherNotifications();
-      if (window.loadClasses) loadClasses(); // update subjects list
+      // FIX 3: only reload classes if attendance panel is NOT open
+      if (state.currentView !== 'attendance' && window.loadClasses) {
+        loadClasses();
+      }
     }
   } catch (e) {
     showToast('Error handling request: ' + e.message, 'error');
@@ -3126,7 +3330,23 @@ window.saveTeacherProfile = async function() {
       showToast('Failed to save profile: ' + err.message, 'error');
     }
   });
-}// =====================================================================
+}
+function getTodayInputDate() {
+  const d = new Date();
+  return d.getFullYear() + '-'
+    + String(d.getMonth() + 1).padStart(2, '0') + '-'
+    + String(d.getDate()).padStart(2, '0');
+}
+
+function toInputDate(dateStr) {
+  if (!dateStr) return getTodayInputDate();
+  const d = new Date(dateStr);
+  if (isNaN(d)) return getTodayInputDate();
+  return d.getFullYear() + '-'
+    + String(d.getMonth() + 1).padStart(2, '0') + '-'
+    + String(d.getDate()).padStart(2, '0');
+}
+// =====================================================================
 // ATTENDANCE IMPORT — Excel/CSV upload with preview & student matching
 // =====================================================================
 
@@ -3496,34 +3716,33 @@ function normalizeDate(raw) {
   if (!raw) return null;
   const s = String(raw).trim();
 
-  // Try native Date parse
   const d = new Date(s);
   if (!isNaN(d.getTime())) {
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return toDisplayDate(d);
   }
 
-  // Try DD/MM/YYYY or MM/DD/YYYY
   const parts = s.split(/[\/\-\.]/);
   if (parts.length === 3) {
     const [a, b, c] = parts.map(Number);
-    const guesses = [new Date(c, b - 1, a), new Date(c, a - 1, b)];
+    // Try MM/DD/YYYY then DD/MM/YYYY
+    const guesses = [new Date(c, a - 1, b), new Date(c, b - 1, a)];
     for (const g of guesses) {
       if (!isNaN(g.getTime())) {
-        return g.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return toDisplayDate(g);   // ← was broken before
       }
     }
   }
 
-  return s; // Return raw if nothing works
+  return s;
 }
 
 function normalizeStatus(raw) {
-  if (!raw) return null;
+  if (!raw) return 'present';  
   const s = String(raw).trim().toLowerCase();
   if (s === 'p' || s === 'present' || s === '1' || s === 'yes') return 'present';
   if (s === 'a' || s === 'absent'  || s === '0' || s === 'no')  return 'absent';
   if (s === 'l' || s === 'late')                                 return 'late';
-  return null;
+  return 'present';  
 }
 
 // ── Show preview step ────────────────────────────────────────────────
@@ -3562,9 +3781,7 @@ function showImportPreview(rawRows, cls, subject) {
   }
 
   // Get existing enrolled students for matching
-  const enrolledStudents = [...new Set(
-    excelState.allRecords.map(r => ({ name: r.student_name, email: r.student_email }))
-  )];
+  const enrolledStudents = excelState.enrolledStudents || [];
 
   // Store for later
   window._importData = { rows: parsed, cls, subject, header, nameCol, dateCol, statusCol };
@@ -3576,18 +3793,18 @@ function showImportPreview(rawRows, cls, subject) {
     return `<span class="imp-status-badge ${cls2}">${s.charAt(0).toUpperCase() + s.slice(1)}</span>`;
   };
 
-  // Build unique student list for matching dropdown
-  const uniqueNames = [...new Set(parsed.map(r => r.name))];
 
-  const matchOptions = (name) => {
-    const opts = enrolledStudents.map(s =>
-      `<option value="${escapeHTML(s.email)}"
-        ${s.name && s.name.toLowerCase() === name.toLowerCase() ? 'selected' : ''}>
-        ${escapeHTML(s.name || s.email)}
-      </option>`
-    ).join('');
-    return `<option value="">— No match —</option>${opts}`;
-  };
+  const matchOptions = () => {
+  if (enrolledStudents.length === 0) {
+    return `<option value="">— No enrolled students —</option>`;
+  }
+  const opts = enrolledStudents.map(s =>
+    `<option value="${escapeHTML(s.email)}">
+      ${escapeHTML(s.name)} (${escapeHTML(s.email)})
+    </option>`
+  ).join('');
+  return `<option value="">— Select student —</option>${opts}`;
+};
 
   let previewHTML = `
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
@@ -3618,23 +3835,24 @@ function showImportPreview(rawRows, cls, subject) {
               <td style="font-weight:600;color:#e8f2ff">${escapeHTML(r.name)}</td>
               <td>
                 <select class="imp-match-select" data-row="${ri}" id="impMatch_${ri}">
-                  ${matchOptions(r.name)}
+                  ${matchOptions()}
                 </select>
               </td>
               <td>
-                <input class="imp-cell-edit" type="text"
-                  value="${escapeHTML(r.date || '')}"
-                  placeholder="e.g. May 5, 2025"
+                <input class="imp-cell-edit" type="date"
+                  value="${r.date ? toInputDate(r.date) : getTodayInputDate()}"
                   data-row="${ri}" id="impDate_${ri}"
-                  style="width:130px"/>
+                  style="width:140px;padding:5px 8px;border:1px solid rgba(79,172,254,.2);
+                        border-radius:6px;background:var(--dark-700,#1a2d47);color:#e8f2ff;
+                        font-size:12px;outline:none;cursor:pointer"/>
               </td>
               <td>
                 <select class="imp-match-select" data-row="${ri}" id="impStatus_${ri}"
                         style="width:100px">
                   <option value="">—</option>
-                  <option value="present" ${r.status === 'present' ? 'selected' : ''}>Present</option>
-                  <option value="absent"  ${r.status === 'absent'  ? 'selected' : ''}>Absent</option>
-                  <option value="late"    ${r.status === 'late'    ? 'selected' : ''}>Late</option>
+                  <option value="present" selected>Present</option>
+                  <option value="absent">Absent</option>
+                  <option value="late">Late</option>
                 </select>
               </td>
             </tr>`).join('')}
@@ -3691,7 +3909,7 @@ function importGoNext() {
     finalRows.push({
       ...r,
       matchedEmail,
-      date:   normalizeDate(date) || date,
+      date: date || getTodayInputDate(),
       status: status || null,
     });
   });
@@ -3699,8 +3917,8 @@ function importGoNext() {
   window._importData.finalRows = finalRows;
 
   // Build confirm summary
-  const valid   = finalRows.filter(r => r.matchedEmail && r.status && r.date);
-  const noMatch = finalRows.filter(r => !r.matchedEmail);
+ const valid   = finalRows.filter(r => r.status && r.date);
+const noMatch = finalRows.filter(r => !r.matchedEmail);
   const noStatus = finalRows.filter(r => !r.status);
   const noDate  = finalRows.filter(r => !r.date);
 
@@ -3716,11 +3934,11 @@ function importGoNext() {
         </div>
         <div style="text-align:center">
           <div style="font-size:22px;font-weight:800;color:#f59e0b">${noMatch.length}</div>
-          <div style="font-size:11px;color:rgba(79,172,254,.5)">No student match</div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">No student match<br><span style="font-size:9px;opacity:.7">(saved as unlinked)</span></div>
         </div>
         <div style="text-align:center">
-          <div style="font-size:22px;font-weight:800;color:#ef4444">${noStatus.length + noDate.length}</div>
-          <div style="font-size:11px;color:rgba(79,172,254,.5)">Missing data</div>
+          <div style="font-size:22px;font-weight:800;color:#ef4444">${finalRows.length - valid.length}</div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">Missing data<br><span style="font-size:9px;opacity:.7">(skipped)</span></div>
         </div>
       </div>
     </div>
@@ -3729,9 +3947,9 @@ function importGoNext() {
       <div style="margin-bottom:16px;padding:12px 16px;background:rgba(245,158,11,.08);
                   border:1px solid rgba(245,158,11,.2);border-radius:10px">
         <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:6px">
-          ⚠ ${noMatch.length} row(s) without a student match — these will be skipped
+          ⚠ ${noMatch.length} row(s) without a student match — saved as unlinked, can be connected later
         </div>
-        ${noMatch.map(r => `
+        ${noMatch.filter(r => r.status && r.date).map(r => `
           <div style="font-size:11.5px;color:rgba(245,158,11,.7);padding:2px 0">
             • ${escapeHTML(r.name)} · ${escapeHTML(r.date || '—')}
           </div>`).join('')}
@@ -3744,7 +3962,8 @@ function importGoNext() {
       <table class="imp-table">
         <thead>
           <tr>
-            <th>Student</th>
+            <th>Name in File</th>
+            <th>Linked Student</th>
             <th>Date</th>
             <th>Status</th>
           </tr>
@@ -3755,6 +3974,9 @@ function importGoNext() {
                        r.status === 'absent'  ? 'imp-badge-absent'  : 'imp-badge-late';
             return `<tr>
               <td style="font-weight:600;color:#e8f2ff">${escapeHTML(r.name)}</td>
+              <td style="font-size:11px;color:${r.matchedEmail ? '#22c55e' : 'rgba(245,158,11,.7)'}">
+                ${r.matchedEmail ? escapeHTML(r.matchedEmail) : '⚠ Unlinked'}
+              </td>
               <td style="font-family:monospace;font-size:11.5px;color:rgba(79,172,254,.6)">
                 ${escapeHTML(r.date)}
               </td>
@@ -3785,24 +4007,32 @@ async function confirmImport() {
   const saveBtn = document.getElementById('impSaveBtn');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
 
-  const valid = finalRows.filter(r => r.matchedEmail && r.status && r.date);
   const subjectIdInt = Math.trunc(Number(subject.id));
 
-  let saved = 0, skipped = 0, failed = 0;
+  // Use today's date formatted the same way the grid uses
+  const today = new Date();
+  const fallbackDate = today.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  // Include ALL rows that have a status — date is optional now
+  const valid = finalRows.filter(r => r.status);
+
+  let saved = 0, failed = 0;
 
   for (const row of valid) {
     try {
-      // Find the record ID from existing records
-      const existing = excelState.allRecords.find(r => {
-        const ts = r.marked_at || r.created_at;
-        if (!ts) return false;
-        const d = new Date(ts);
-        const dStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        return r.student_email === row.matchedEmail && dStr === row.date;
-      });
+      // Use the row's date, or fall back to today
+      const dateToUse = row.date || fallbackDate;
+
+      // Try to find an existing record by email+date (if we have an email match)
+      const existing = row.matchedEmail ? excelState.allRecords.find(r => {
+      const ts = r.marked_at || r.created_at;
+      if (!ts) return false;
+      const dStr = toDisplayDate(ts);   // toDisplayDate accepts a timestamp string directly
+      return r.student_email === row.matchedEmail && dStr === toDisplayDate(new Date(dateToUse));
+      }) : null;
 
       if (existing) {
-        // Update existing record
+        // UPDATE existing record
         await apiFetch(`/api/attendance/${existing.id}`, {
           method:  'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -3811,9 +4041,26 @@ async function confirmImport() {
         existing.status = row.status;
         saved++;
       } else {
-        // Need to insert new record via a new endpoint
-        // For now, use the bulk insert endpoint if available, else skip
-        skipped++;
+        // INSERT new record (even without a matched student)
+        const newRecord = await apiFetch('/api/attendance/import', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            classId:      cls.id,
+            subjectId:    subjectIdInt,
+            studentName:  row.name,
+            studentEmail: row.matchedEmail || null,
+            date:         dateToUse,
+            status:       row.status,
+            room:         subject.room || '',
+            startTime:    subject.start_time || '',
+            endTime:      subject.end_time || '',
+          }),
+        });
+        if (newRecord && newRecord.record) {
+          excelState.allRecords.push(newRecord.record);
+        }
+        saved++;
       }
     } catch (err) {
       console.warn('Import row failed:', row, err.message);
@@ -3828,9 +4075,10 @@ async function confirmImport() {
 
   document.getElementById('attImportModal').remove();
 
+  const skipped = finalRows.length - valid.length;
   if (failed === 0) {
-    showToast(`Import done! ${saved} updated, ${skipped} skipped (new records need manual entry).`, 'success');
+    showToast(`Import done! ${saved} record(s) saved.${skipped ? ` ${skipped} row(s) skipped (missing status).` : ''}`, 'success');
   } else {
-    showToast(`${saved} saved, ${skipped} skipped, ${failed} failed.`, 'info');
+    showToast(`${saved} saved, ${failed} failed.`, 'info');
   }
 }

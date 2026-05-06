@@ -1084,11 +1084,11 @@ app.patch('/api/attendance/:recordId', requireLogin, requireSupabase, async (req
 
       // Fetch all attendance for this class — avoid .eq('subject_id', floatString)
       // which causes a Postgres bigint cast error.
-      const { data: allAttendance, error: attError } = await supabase
-        .from('attendance')
-        .select('id, student_name, student_email, status, marked_at, class_id, subject_id')
-        .eq('class_id', classId)
-        .order('marked_at', { ascending: false });
+     const { data: allAttendance, error: attError } = await supabase
+      .from('attendance')
+      .select('id, student_name, student_email, status, marked_at, created_at, class_id, subject_id')
+      .eq('class_id', classId)
+      .order('marked_at', { ascending: false, nullsFirst: false });
 
       if (attError) throw attError;
 
@@ -1479,7 +1479,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
   const subjectIdInt = Math.trunc(Number(subjectId));
 
   try {
-    // Step 1 — Verify the class exists
+   
     const { data: classData, error: classError } = await supabaseAdmin
       .from('classes')
       .select('id, class_name, password, subjects')
@@ -1490,7 +1490,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
       return res.status(404).json({ error: 'Class not found' });
     }
 
-    // Step 2 — Passcode check against classes.password only
+    // Passcode check against classes.password only
     // If password is null/empty, block entry entirely
     if (!classData.password) {
       return res.status(401).json({ error: 'No active attendance session. Please wait for your teacher to start one.' });
@@ -1502,7 +1502,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
         return res.status(401).json({ error: 'Incorrect passcode. Please try again.' });
       }
 
-    // Step 3 — Find the subject details
+    // — Find the subject details
     const subject = (classData.subjects || []).find(
       s => Math.trunc(Number(s.id)) === subjectIdInt
     );
@@ -1510,7 +1510,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
       return res.status(404).json({ error: 'Subject not found in class' });
     }
 
-    // Step 4 — Duplicate check (already submitted today)
+    // — Duplicate check (already submitted today)
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date();
@@ -1533,7 +1533,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
       });
     }
 
-    // Step 5 — Insert attendance record as present only
+    //  Insert attendance record as present only
     const now = new Date();
     const today = now.toISOString().split('T')[0];
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1550,6 +1550,7 @@ app.post('/api/submit-attendance', requireLogin, requireSupabase, async (req, re
         status:        'present',
         date:          today,
         dow,
+        marked_at: now.toISOString(),
         time:          subject.start_time && subject.end_time
                          ? `${subject.start_time}–${subject.end_time}`
                          : '',
@@ -1633,6 +1634,235 @@ app.get('/api/admin/attendance-logs', requireLogin, requireAdmin, requireSupabas
 
     res.json(logs);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// POST /api/attendance/import — insert a single attendance record (teacher import)
+app.post('/api/attendance/import', requireLogin, requireSupabase, async (req, res) => {
+  if (req.session.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { classId, subjectId, studentName, studentEmail, date, status, room, startTime, endTime } = req.body;
+
+  if (!classId || !subjectId || !studentName || !status) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  const allowed = ['present', 'absent', 'late'];
+  if (!allowed.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  try {
+    // Verify teacher owns the class
+    const { data: cls, error: clsErr } = await supabase
+      .from('classes')
+      .select('id')
+      .eq('id', classId)
+      .eq('teacher_id', req.session.user.id)
+      .single();
+
+    if (clsErr || !cls) {
+      return res.status(403).json({ error: 'Class not found or unauthorized' });
+    }
+
+    // Parse the date string — fall back to today if missing/invalid
+    const parsedDate = date ? new Date(date) : new Date();
+    const validDate = !isNaN(parsedDate.getTime()) ? parsedDate : new Date();
+    const isoDate = validDate.toISOString();
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dow = dayNames[validDate.getDay()];
+
+    // Build time string from start/end if provided
+    const timeStr = (startTime && endTime)
+      ? `${startTime}–${endTime}`
+      : (startTime || '');
+    console.log('[IMPORT DEBUG] isoDate:', isoDate, '| parsedDate:', validDate, '| raw date input:', date);
+    const { data, error } = await (supabaseAdmin || supabase)
+      .from('attendance')
+      .insert({
+        student_id:     null,
+        student_name:  studentName,
+        student_email: studentEmail || null,
+        class_id:      classId,
+        subject_id:    Math.trunc(Number(subjectId)),
+        status,
+        date:          isoDate.split('T')[0],
+        marked_at:     isoDate,
+        dow, 
+        room:          room || null,
+        time:          timeStr || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, record: data });
+  } catch (err) {
+    console.error('[IMPORT INSERT] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+// PATCH /api/attendance/update-student — bulk update name/email on attendance rows
+app.patch('/api/attendance/update-student', requireLogin, requireSupabase, async (req, res) => {
+  if (req.session.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { origEmail, newName, newEmail, recordIds } = req.body;
+  if (!recordIds || !Array.isArray(recordIds) || recordIds.length === 0) {
+    return res.status(400).json({ error: 'recordIds required' });
+  }
+
+  try {
+    const client = supabaseAdmin || supabase;
+
+    // Verify all records belong to classes owned by this teacher
+    const { data: records, error: fetchErr } = await client
+      .from('attendance')
+      .select('id, class_id')
+      .in('id', recordIds);
+
+    if (fetchErr) throw fetchErr;
+
+    const classIds = [...new Set(records.map(r => r.class_id))];
+    const { data: classes, error: clsErr } = await client
+      .from('classes')
+      .select('id')
+      .in('id', classIds)
+      .eq('teacher_id', req.session.user.id);
+
+    if (clsErr) throw clsErr;
+
+    const ownedClassIds = new Set(classes.map(c => c.id));
+    const authorizedIds = records
+      .filter(r => ownedClassIds.has(r.class_id))
+      .map(r => r.id);
+
+    if (authorizedIds.length === 0) {
+      return res.status(403).json({ error: 'Not authorized to edit these records' });
+    }
+
+    // Build update payload
+    const updatePayload = { student_name: newName };
+    if (newEmail) {
+      updatePayload.student_email = newEmail;
+      // Only update student_id if it looks like an import placeholder or matches origEmail
+      if (!origEmail || origEmail.startsWith('import_') || origEmail === '') {
+        updatePayload.student_email = newEmail;
+      }
+    }
+
+    const { error: updateErr } = await client
+      .from('attendance')
+      .update(updatePayload)
+      .in('id', authorizedIds);
+
+    if (updateErr) throw updateErr;
+
+    res.json({ success: true, updated: authorizedIds.length });
+  } catch (err) {
+    console.error('[UPDATE STUDENT] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+// GET /api/enrolled-students/:classId/:subjectId
+// Returns all approved enrolled students for a subject (for the link dropdown)
+app.get('/api/enrolled-students/:classId/:subjectId', requireLogin, requireSupabase, async (req, res) => {
+  if (req.session.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { classId, subjectId } = req.params;
+  const subjectIdInt = Math.trunc(Number(subjectId));
+
+  try {
+    const { data: cls, error: clsErr } = await supabase
+      .from('classes')
+      .select('id')
+      .eq('id', classId)
+      .eq('teacher_id', req.session.user.id)
+      .single();
+
+    if (clsErr || !cls) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    // Get approved enrollments for this specific subject
+    const { data: enrollments, error: enrollErr } = await client
+      .from('student_enrollments')
+      .select('student_id, student_name, student_email')
+      .eq('class_id', classId)
+      .eq('subject_id', subjectIdInt)
+      .eq('status', 'approved');
+
+    if (enrollErr) throw enrollErr;
+
+    // Deduplicate by student_id — keep first occurrence only
+    const seen = new Set();
+    const students = (enrollments || [])
+      .filter(e => {
+        if (!e.student_email || seen.has(e.student_id)) return false;
+        seen.add(e.student_id);
+        return true;
+      })
+      .map(e => ({
+        name:  e.student_name  || e.student_email,
+        email: e.student_email,
+        id:    e.student_id,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({ students });
+  } catch (err) {
+    console.error('[ENROLLED STUDENTS] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+app.delete('/api/attendance/:recordId', requireLogin, requireSupabase, async (req, res) => {
+  if (req.session.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { recordId } = req.params;
+
+  try {
+    // Verify the record belongs to a class owned by this teacher
+    const { data: record, error: recErr } = await supabase
+      .from('attendance')
+      .select('id, class_id')
+      .eq('id', recordId)
+      .single();
+
+    if (recErr || !record) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+
+    const { data: cls, error: clsErr } = await supabase
+      .from('classes')
+      .select('id')
+      .eq('id', record.class_id)
+      .eq('teacher_id', req.session.user.id)
+      .single();
+
+    if (clsErr || !cls) {
+      return res.status(403).json({ error: 'Not authorized to delete this record' });
+    }
+
+    const { error: deleteErr } = await (supabaseAdmin || supabase)
+      .from('attendance')
+      .delete()
+      .eq('id', recordId);
+
+    if (deleteErr) throw deleteErr;
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ATTENDANCE DELETE] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

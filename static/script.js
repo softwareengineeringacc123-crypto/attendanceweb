@@ -1096,19 +1096,50 @@ async function submitPasscodeModal() {
     }
 
     if (!response.ok) {
-      msgEl.style.display    = 'flex';
-      msgEl.style.alignItems = 'center';
-      msgEl.style.gap        = '6px';
-      msgEl.style.padding    = '10px 12px';
-      msgEl.style.background = 'rgba(239,68,68,0.08)';
-      msgEl.style.borderRadius = '8px';
-      msgEl.innerHTML =
-        '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
-        '<span style="color:#ef4444;font-size:12.5px">' + (data.error || 'Failed to submit') + '</span>';
-      btn.disabled    = false;
-      btn.textContent = 'Submit Attendance';
-      return;
-    }
+          const isWrongPasscode = data.error && data.error.toLowerCase().includes('incorrect passcode');
+
+          msgEl.style.display      = 'flex';
+          msgEl.style.alignItems   = 'center';
+          msgEl.style.gap          = '6px';
+          msgEl.style.padding      = '12px 14px';
+          msgEl.style.background   = isWrongPasscode ? 'rgba(245,158,11,0.08)' : 'rgba(239,68,68,0.08)';
+          msgEl.style.borderRadius = '8px';
+          msgEl.style.border       = isWrongPasscode ? '1px solid rgba(245,158,11,0.25)' : '1px solid rgba(239,68,68,0.25)';
+
+          const iconColor = isWrongPasscode ? '#F59E0B' : '#ef4444';
+          const iconPath  = isWrongPasscode
+            ? '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'
+            : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
+
+          msgEl.innerHTML =
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + iconColor + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' + iconPath + '</svg>' +
+            '<div style="display:flex;flex-direction:column;gap:2px">' +
+              '<span style="color:' + iconColor + ';font-size:12.5px;font-weight:700">' +
+                (isWrongPasscode ? '🔐 Wrong Passcode' : '⚠️ ' + (data.error || 'Failed to submit')) +
+              '</span>' +
+              (isWrongPasscode
+                ? '<span style="color:var(--ink5);font-size:11px">The passcode you entered is incorrect. Please check with your teacher and try again.</span>'
+                : '') +
+            '</div>';
+
+          // Shake the input to give visual feedback
+          if (isWrongPasscode) {
+            const input = document.getElementById('pcModal_input');
+            input.style.borderColor = '#F59E0B';
+            input.style.animation = 'none';
+            input.offsetHeight; // reflow
+            input.style.animation = 'shake 0.4s ease';
+            input.select();
+            setTimeout(() => {
+              input.style.borderColor = '';
+              input.style.animation = '';
+            }, 1500);
+          }
+
+          btn.disabled    = false;
+          btn.textContent = 'Submit Attendance';
+          return;
+        }
 
     // ── Success ──
     var isLate      = data.status === 'late';

@@ -1016,3 +1016,135 @@ header {
   60%       { transform: translateX(-4px); }
   80%       { transform: translateX(4px); }
 }
+/* ─── ATTENDANCE TABLE — MOBILE FIX ────────────────────────── */
+@media (max-width: 768px) {
+
+  /* Remove sticky so the whole table scrolls as one unit */
+  .att-th-student,
+  .att-th-rate,
+  .att-td-student,
+  .att-td-rate {
+    position: static !important;
+    left: auto !important;
+    z-index: auto !important;
+  }
+
+  /* Compact student column */
+  .att-th-student,
+  .att-td-student {
+    min-width: 130px !important;
+    max-width: 150px !important;
+  }
+
+  /* Compact rate column */
+  .att-th-rate,
+  .att-td-rate {
+    min-width: 64px !important;
+    max-width: 72px !important;
+    padding: 6px 6px !important;
+  }
+
+  /* Compact date columns */
+  .att-th-date {
+    min-width: 68px !important;
+    max-width: 76px !important;
+  }
+
+  .att-th-date-day  { font-size: 15px !important; }
+  .att-th-date-mon  { font-size: 8px !important; }
+  .att-th-date-year { font-size: 8px !important; }
+
+  /* Compact cell height */
+  .att-cell-inner { height: 42px !important; font-size: 10px !important; }
+
+  /* Compact student inner */
+  .att-td-student-inner {
+    padding: 6px 8px !important;
+    min-height: 42px !important;
+    gap: 7px !important;
+  }
+
+  .att-avatar {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 9px !important;
+    border-radius: 6px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .att-student-name  { font-size: 10px !important; }
+  .att-student-email { font-size: 8.5px !important; }
+
+  .att-rate-pct       { font-size: 11px !important; }
+  .att-rate-breakdown { font-size: 8px !important; }
+
+  /* The table wrapper must scroll horizontally */
+  .att-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    border-radius: 10px !important;
+  }
+
+  /* Stats — 2 column grid */
+  #attendanceStatsRow {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    padding: 10px 12px 0 !important;
+  }
+
+  .att-stat-card  { padding: 10px 12px !important; }
+  .att-stat-value { font-size: 20px !important; }
+  .att-stat-label { font-size: 8.5px !important; }
+
+  /* Attendance topbar wraps on mobile */
+  .att-topbar {
+    height: auto !important;
+    flex-wrap: wrap !important;
+    padding: 10px 12px !important;
+    gap: 8px !important;
+  }
+
+  /* Button row scrolls horizontally */
+  .att-topbar > div:last-child {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 2px !important;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+  }
+
+  /* Shrink action buttons */
+  .att-action-btn,
+  .att-save-btn {
+    padding: 7px 10px !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Search bar full width */
+  .att-search-input { width: 100% !important; }
+
+  /* Attendance panel padding */
+  #attendancePanel > div[style*="overflow:auto"],
+  #attendancePanel > div[style*="overflow: auto"] {
+    padding: 0 10px 16px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .att-th-student,
+  .att-td-student {
+    min-width: 110px !important;
+    max-width: 120px !important;
+  }
+
+  .att-th-date {
+    min-width: 58px !important;
+    max-width: 64px !important;
+  }
+
+  .att-th-date-day { font-size: 13px !important; }
+}
