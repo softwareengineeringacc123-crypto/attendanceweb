@@ -1890,7 +1890,7 @@ app.delete('/api/attendance/:recordId', requireLogin, requireSupabase, async (re
     res.status(500).json({ error: err.message });
   }
 });
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8080;
 app.listen(port, () => {
  console.log(`Node attendance app running on port ${port}`);
 });
