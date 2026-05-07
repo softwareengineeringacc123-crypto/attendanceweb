@@ -694,7 +694,7 @@ function showView(id) {
   if(enrollBtn) enrollBtn.style.display = (id === 'dashboardView' && !window.HAS_ENROLLMENTS) ? '' : 'none';
 
   if(id==='dashboardView')  renderDashboard();
-  if(id==='attendanceView'){ renderSummaryChips(); renderSubjectLegend(); renderTable(); }
+  if(id==='attendanceView') renderAttendanceView();
   if(id==='scheduleView')   renderScheduleGrid();
   if(id==='mySubjectView')  renderMySubjects();
 }
@@ -1595,3 +1595,776 @@ if (enrollmentCodeInput) {
   });
 }
 });
+function studentToDisplayDate(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (isNaN(d)) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+ 
+function studentFmtColDate(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return { day: dateStr, mon: '', year: '' };
+  return {
+    day:  String(d.getDate()).padStart(2, '0'),
+    mon:  d.toLocaleString('en-US', { month: 'short' }).toUpperCase(),
+    year: String(d.getFullYear()),
+  };
+}
+ 
+function studentCellStyle(status) {
+  const map = {
+    present: { bg: 'rgba(34,197,94,.15)',   color: '#22c55e', label: 'Present' },
+    absent:  { bg: 'rgba(239,68,68,.15)',   color: '#ef4444', label: 'Absent'  },
+    late:    { bg: 'rgba(245,158,11,.15)',  color: '#f59e0b', label: 'Late'    },
+    excused: { bg: 'rgba(139,92,246,.15)',  color: '#a78bfa', label: 'Excused' },
+    null:    { bg: 'rgba(30,41,59,.6)',      color: '#475569', label: '—'       },
+  };
+  return map[status] || map.null;
+}
+ 
+// ── Subject Picker (renders inside #attendanceView) ───────────────────
+ 
+function renderAttendanceView() {
+  // Called by showView('attendanceView')
+  renderSummaryChips();      // existing chips
+  renderStudentSubjectPicker();
+}
+ 
+function renderStudentSubjectPicker() {
+  // Replace the filter-bar + table area with our subject picker
+  const wrap = document.getElementById('historyTableWrap');
+  const pagination = document.getElementById('pagination');
+  const filterBar = document.querySelector('#attendanceView .filter-bar');
+  const subjectLegend = document.getElementById('subjectLegend');
+ 
+  // Hide old controls — we show them inside the grid panel instead
+  if (filterBar) filterBar.style.display = 'none';
+  if (subjectLegend) subjectLegend.style.display = 'none';
+  if (pagination) pagination.innerHTML = '';
+ 
+  if (!wrap) return;
+ 
+  if (SUBJECTS.length === 0) {
+    wrap.innerHTML = `
+      <div style="padding:48px 20px;text-align:center;color:var(--ink5)">
+        <div style="font-size:32px;margin-bottom:12px">📚</div>
+        <div style="font-size:14px;font-weight:700;color:var(--ink3)">No subjects enrolled yet.</div>
+        <div style="font-size:12px;margin-top:4px">Enroll in a class to see your attendance.</div>
+      </div>`;
+    return;
+  }
+ 
+  // One card per subject
+  wrap.innerHTML = `
+    <div style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;color:var(--ink3);margin-bottom:2px">
+        Select a subject to view your attendance records
+      </div>
+      <div style="font-size:11px;color:var(--ink5)">${SEMESTER_AY}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
+      ${SUBJECTS.map((subj, i) => {
+        const recs = ALL_SEMESTER_RECORDS.filter(r => Number(r.subjId) === Number(subj.id));
+        const p = recs.filter(r => r.status === 'present').length;
+        const a = recs.filter(r => r.status === 'absent').length;
+        const l = recs.filter(r => r.status === 'late').length;
+        const total = recs.length;
+        const rate = total ? Math.round((p / total) * 100) : 0;
+        const rateColor = rate >= 80 ? '#10b981' : rate >= 60 ? '#f59e0b' : '#ef4444';
+ 
+        return `
+          <div class="student-subj-card" data-subj-idx="${i}"
+               style="background:var(--surface);border:1.5px solid var(--border);
+                      border-radius:12px;padding:18px;cursor:pointer;
+                      transition:all .18s;position:relative;overflow:hidden"
+               onmouseover="this.style.borderColor='${subj.color}';this.style.boxShadow='0 4px 16px rgba(0,0,0,.12)'"
+               onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='none'"
+               onclick="openStudentAttendanceGrid(${i})">
+            <!-- color strip -->
+            <div style="position:absolute;left:0;top:0;bottom:0;width:4px;background:${subj.color};border-radius:12px 0 0 12px"></div>
+            <div style="padding-left:10px">
+              <div style="font-size:13px;font-weight:700;color:var(--ink2);
+                          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                          margin-bottom:4px">
+                ${escapeHTML(subj.name)}
+              </div>
+              <div style="font-size:11px;color:var(--ink5);margin-bottom:12px">
+                ${escapeHTML(subj.className || '')}
+                ${subj.time ? ' · ' + escapeHTML(subj.time) : ''}
+              </div>
+              <!-- mini bar -->
+              <div style="height:6px;border-radius:99px;background:var(--border);overflow:hidden;margin-bottom:6px">
+                <div style="height:100%;width:${rate}%;background:${rateColor};
+                             border-radius:99px;transition:width .8s ease"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div style="font-size:11px;color:var(--ink5)">
+                  <span style="color:#10b981;font-weight:700">${p}P</span> ·
+                  <span style="color:#ef4444;font-weight:700">${a}A</span>
+                  ${l > 0 ? ` · <span style="color:#f59e0b;font-weight:700">${l}L</span>` : ''}
+                  · ${total} total
+                </div>
+                <div style="font-size:13px;font-weight:800;color:${rateColor}">${rate}%</div>
+              </div>
+            </div>
+            <!-- arrow -->
+            <div style="position:absolute;right:14px;top:50%;transform:translateY(-50%);
+                        color:var(--ink5);opacity:.5;font-size:18px">›</div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+ 
+// ── Main grid opener ──────────────────────────────────────────────────
+ 
+function openStudentAttendanceGrid(subjIdx) {
+  const subj = SUBJECTS[subjIdx];
+  if (!subj) return;
+ 
+  // Filter records for this subject only
+  const records = ALL_SEMESTER_RECORDS.filter(r => Number(r.subjId) === Number(subj.id));
+ 
+  // Build or reuse panel
+  let panel = document.getElementById('studentAttendancePanel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'studentAttendancePanel';
+    panel.style.cssText =
+      'position:fixed;inset:0;z-index:1200;background:var(--surface,#f8fafc);' +
+      'display:flex;flex-direction:column;overflow:hidden;font-family:var(--font,\'DM Sans\',sans-serif)';
+    document.body.appendChild(panel);
+  }
+ 
+  panel.innerHTML = buildStudentGridHTML(subj, records);
+  panel.style.display = 'flex';
+ 
+  // Wire up close
+  panel.querySelector('#studentAttBackBtn').addEventListener('click', () => {
+    panel.style.display = 'none';
+  });
+ 
+  // Wire up export
+  panel.querySelector('#studentAttExportBtn').addEventListener('click', () => {
+    exportStudentAttendanceCSV(subj, records);
+  });
+ 
+  // Wire up search & date filters
+  panel.querySelector('#sAttSearch').addEventListener('input', applyStudentFilters);
+  panel.querySelector('#sAttDateFrom').addEventListener('change', applyStudentFilters);
+  panel.querySelector('#sAttDateTo').addEventListener('change', applyStudentFilters);
+  panel.querySelector('#sAttDateClear').addEventListener('click', () => {
+    panel.querySelector('#sAttDateFrom').value = '';
+    panel.querySelector('#sAttDateTo').value   = '';
+    applyStudentFilters();
+  });
+ 
+  // Store current data for filter re-renders
+  panel._subjIdx = subjIdx;
+  panel._records = records;
+ 
+  // Initial render
+  renderStudentGrid(records, subj);
+}
+ 
+// ── HTML shell ────────────────────────────────────────────────────────
+ 
+function buildStudentGridHTML(subj, records) {
+  const p = records.filter(r => r.status === 'present').length;
+  const a = records.filter(r => r.status === 'absent').length;
+  const l = records.filter(r => r.status === 'late').length;
+  const total = records.length;
+  const rate = total ? Math.round((p / total) * 100) : 0;
+  const rateColor = rate >= 80 ? '#10b981' : rate >= 60 ? '#f59e0b' : '#ef4444';
+ 
+  return `
+    <style>
+      /* ── Student Attendance Panel ── */
+      #studentAttendancePanel {
+        --panel-bg: #f1f5f9;
+        --header-bg: #fff;
+        --border-c: rgba(15,23,42,.1);
+        --ink: #0f172a;
+        --ink3: #334155;
+        --ink5: #64748b;
+        background: var(--panel-bg);
+      }
+      .sat-topbar {
+        background: var(--header-bg);
+        border-bottom: 2px solid var(--border-c);
+        padding: 0 24px;
+        height: 62px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+        gap: 12px;
+        box-shadow: 0 1px 4px rgba(15,23,42,.06);
+      }
+      .sat-back-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 14px;
+        border-radius: 8px;
+        border: 1.5px solid var(--border-c);
+        background: #f8fafc;
+        color: var(--ink5);
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all .15s;
+      }
+      .sat-back-btn:hover { background: #e2e8f0; color: var(--ink); }
+      .sat-export-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: none;
+        background: #4361ee;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(67,97,238,.3);
+        transition: all .15s;
+      }
+      .sat-export-btn:hover { background: #3451d1; }
+      .sat-stat-card {
+        background: #fff;
+        border: 1.5px solid var(--border-c);
+        border-radius: 12px;
+        padding: 14px 18px;
+        box-shadow: 0 1px 4px rgba(15,23,42,.05);
+      }
+      .sat-stat-label {
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        color: var(--ink5);
+        margin-bottom: 4px;
+      }
+      .sat-stat-value {
+        font-size: 26px;
+        font-weight: 900;
+        line-height: 1;
+      }
+      /* ── Table ── */
+      .sat-table-wrap {
+        overflow: auto;
+        border: 1.5px solid var(--border-c);
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(15,23,42,.07);
+        background: #fff;
+      }
+      #sAttTable {
+        border-collapse: separate;
+        border-spacing: 0;
+        width: max-content;
+        min-width: 100%;
+      }
+      #sAttTable thead th {
+        background: #fff;
+        position: sticky;
+        top: 0;
+        z-index: 3;
+      }
+      .sat-th-info {
+        min-width: 180px;
+        padding: 14px 16px;
+        text-align: left;
+        font-size: 10px;
+        font-weight: 800;
+        color: var(--ink5);
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        border-right: 2px solid var(--border-c);
+        border-bottom: 2px solid #4361ee;
+        position: sticky;
+        left: 0;
+        z-index: 5;
+        background: #fff;
+      }
+      .sat-th-rate {
+        min-width: 90px;
+        padding: 14px 10px;
+        text-align: center;
+        font-size: 10px;
+        font-weight: 800;
+        color: var(--ink5);
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        border-right: 2px solid var(--border-c);
+        border-bottom: 2px solid #4361ee;
+        position: sticky;
+        left: 180px;
+        z-index: 4;
+        background: #fff;
+      }
+      .sat-th-date {
+        min-width: 90px;
+        padding: 0;
+        border-right: 1px solid rgba(15,23,42,.07);
+        border-bottom: 2px solid #4361ee;
+        text-align: center;
+        vertical-align: bottom;
+        background: #fff;
+      }
+      .sat-th-date-inner { padding: 10px 8px 12px; }
+      .sat-th-date-mon { font-size: 9px; font-weight: 800; color: var(--ink5); letter-spacing: .1em; text-transform: uppercase; }
+      .sat-th-date-day { font-size: 20px; font-weight: 900; color: var(--ink); line-height: 1; margin: 1px 0; }
+      .sat-th-date-year { font-size: 9px; color: var(--ink5); }
+      #sAttTable tbody tr { transition: background .1s; }
+      #sAttTable tbody tr:hover td { background: #f8fafc !important; }
+      .sat-td-info {
+        padding: 0;
+        border-right: 2px solid var(--border-c);
+        border-bottom: 1.5px solid rgba(15,23,42,.06);
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        min-width: 180px;
+        max-width: 180px;
+        background: #fff;
+      }
+      .sat-td-info-inner {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        min-height: 52px;
+      }
+      .sat-td-rate {
+        padding: 8px 10px;
+        border-right: 2px solid var(--border-c);
+        border-bottom: 1.5px solid rgba(15,23,42,.06);
+        position: sticky;
+        left: 180px;
+        z-index: 2;
+        min-width: 90px;
+        text-align: center;
+        vertical-align: middle;
+        background: #fff;
+      }
+      .sat-td-cell {
+        padding: 0;
+        border-right: 1px solid rgba(15,23,42,.06);
+        border-bottom: 1.5px solid rgba(15,23,42,.06);
+        text-align: center;
+        background: #fff;
+      }
+      .sat-cell-inner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 52px;
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: .2px;
+      }
+      /* Search / date inputs */
+      .sat-search {
+        padding: 8px 14px 8px 36px;
+        border: 1.5px solid var(--border-c);
+        border-radius: 8px;
+        font-size: 13px;
+        outline: none;
+        width: 220px;
+        background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 11px center;
+        color: var(--ink);
+        transition: border .15s, box-shadow .15s;
+      }
+      .sat-search:focus { border-color: #4361ee; box-shadow: 0 0 0 3px rgba(67,97,238,.12); }
+      .sat-date-input {
+        padding: 8px 10px;
+        border: 1.5px solid var(--border-c);
+        border-radius: 8px;
+        font-size: 12px;
+        outline: none;
+        background: #fff;
+        color: var(--ink);
+        cursor: pointer;
+        transition: border .15s;
+      }
+      .sat-date-input:focus { border-color: #4361ee; }
+      .sat-clear-btn {
+        padding: 6px 10px;
+        border: 1.5px solid rgba(239,68,68,.3);
+        border-radius: 7px;
+        background: none;
+        color: #ef4444;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .sat-legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding: 8px 0; font-size: 11px; }
+      .sat-legend-item { display: flex; align-items: center; gap: 5px; font-weight: 600; color: var(--ink3); }
+      .sat-legend-dot { width: 12px; height: 12px; border-radius: 4px; border: 1.5px solid; }
+      /* read-only banner */
+      .sat-readonly-banner {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 99px;
+        background: rgba(67,97,238,.08);
+        border: 1px solid rgba(67,97,238,.18);
+        font-size: 11px;
+        font-weight: 700;
+        color: #4361ee;
+      }
+    </style>
+ 
+    <!-- Top bar -->
+    <div class="sat-topbar">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0">
+        <button id="studentAttBackBtn" class="sat-back-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Back
+        </button>
+        <div style="min-width:0">
+          <div style="font-size:15px;font-weight:800;color:var(--ink);
+                      white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${escapeHTML(subj.name)}
+          </div>
+          <div style="font-size:11px;color:var(--ink5);margin-top:1px">
+            ${escapeHTML(subj.className || '')}
+            ${subj.time ? ' · ' + escapeHTML(subj.time) : ''}
+            ${subj.room ? ' · ' + escapeHTML(subj.room) : ''}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <div class="sat-readonly-banner">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2"/>
+            <path d="M7 11V7a5 5 0 0110 0v4"/>
+          </svg>
+          View Only
+        </div>
+        <button id="studentAttExportBtn" class="sat-export-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Export CSV
+        </button>
+      </div>
+    </div>
+ 
+    <!-- Stats -->
+    <div id="sAttStatsRow"
+         style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;
+                padding:16px 24px 0;flex-shrink:0">
+      <div class="sat-stat-card">
+        <div class="sat-stat-label">Total Sessions</div>
+        <div class="sat-stat-value">${total}</div>
+      </div>
+      <div class="sat-stat-card">
+        <div class="sat-stat-label">Present</div>
+        <div class="sat-stat-value" style="color:#10b981">${p}</div>
+      </div>
+      <div class="sat-stat-card">
+        <div class="sat-stat-label">Absent</div>
+        <div class="sat-stat-value" style="color:#ef4444">${a}</div>
+      </div>
+      <div class="sat-stat-card">
+        <div class="sat-stat-label">Attendance Rate</div>
+        <div class="sat-stat-value" style="color:${rateColor}">${rate}%</div>
+      </div>
+    </div>
+ 
+    <!-- Search / Date filter -->
+    <div style="padding:12px 24px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap">
+      <input id="sAttSearch" type="text" class="sat-search" placeholder="Search date…"/>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <input id="sAttDateFrom" type="date" class="sat-date-input" title="From"/>
+        <span style="color:var(--ink5);font-size:12px;font-weight:600">to</span>
+        <input id="sAttDateTo" type="date" class="sat-date-input" title="To"/>
+        <button id="sAttDateClear" class="sat-clear-btn">✕ Clear</button>
+      </div>
+    </div>
+ 
+    <!-- Grid -->
+    <div style="flex:1;overflow:auto;padding:0 24px 24px">
+      <div id="sAttTableWrap">
+        <div style="padding:48px;text-align:center;color:var(--ink5)">
+          <div style="font-size:22px;margin-bottom:8px">⏳</div>Loading…
+        </div>
+      </div>
+    </div>`;
+}
+ 
+// ── Core grid renderer ────────────────────────────────────────────────
+ 
+function renderStudentGrid(records, subj) {
+  const wrap = document.getElementById('sAttTableWrap');
+  if (!wrap) return;
+ 
+  // Store for filter re-use
+  wrap._allRecords = records;
+  wrap._subj = subj;
+ 
+  _renderStudentGridFromRecords(records, subj);
+}
+ 
+function _renderStudentGridFromRecords(records, subj) {
+  const wrap = document.getElementById('sAttTableWrap');
+  if (!wrap) return;
+ 
+  if (!records || records.length === 0) {
+    wrap.innerHTML = `
+      <div style="padding:64px 20px;text-align:center">
+        <div style="font-size:32px;margin-bottom:12px">📋</div>
+        <div style="font-size:14px;font-weight:700;color:var(--ink3)">No attendance records yet</div>
+        <div style="font-size:12px;color:var(--ink5);margin-top:6px">
+          Records appear here once your teacher marks attendance or you submit via passcode.
+        </div>
+      </div>`;
+    return;
+  }
+ 
+  // ── Build date set ────────────────────────────────────────────────
+  const dateSet = new Set();
+  records.forEach(r => {
+    // r.date is "YYYY-MM-DD" from server; fallback to marked_at/created_at
+    const raw = r.date || r.marked_at || r.created_at;
+    const display = studentToDisplayDate(new Date(raw + (r.date ? 'T00:00:00Z' : '')));
+    if (display) dateSet.add(display);
+  });
+ 
+  const dates = [...dateSet].sort((a, b) => new Date(a) - new Date(b));
+ 
+  // ── Build lookup: dateDisplay → status ────────────────────────────
+  const lookup = {};
+  records.forEach(r => {
+    const raw = r.date || r.marked_at || r.created_at;
+    const display = studentToDisplayDate(new Date(raw + (r.date ? 'T00:00:00Z' : '')));
+    if (display && !lookup[display]) lookup[display] = r.status;
+  });
+ 
+  // ── Column headers ────────────────────────────────────────────────
+  const colHeaders = dates.map(d => {
+    const { day, mon, year } = studentFmtColDate(d);
+    return `
+      <th class="sat-th-date">
+        <div class="sat-th-date-inner">
+          <div class="sat-th-date-mon">${mon}</div>
+          <div class="sat-th-date-day">${day}</div>
+          <div class="sat-th-date-year">${year}</div>
+        </div>
+      </th>`;
+  }).join('');
+ 
+  // ── Single student row (the logged-in student) ────────────────────
+  // Compute per-date stats
+  let p = 0, a = 0, l = 0;
+  dates.forEach(d => {
+    const s = lookup[d];
+    if (s === 'present') p++;
+    else if (s === 'absent') a++;
+    else if (s === 'late') l++;
+  });
+  const total = p + a + l;
+  const pct = total ? Math.round((p / total) * 100) : 0;
+  const rateColor = pct >= 80 ? '#059669' : pct >= 60 ? '#d97706' : '#dc2626';
+ 
+  const cells = dates.map(d => {
+    const status = lookup[d] || null;
+    const s = studentCellStyle(status);
+    return `
+      <td class="sat-td-cell">
+        <div class="sat-cell-inner" style="background:${s.bg};color:${s.color}">
+          ${s.label}
+        </div>
+      </td>`;
+  }).join('');
+ 
+  const legend = `
+    <div class="sat-legend">
+      <div class="sat-legend-item">
+        <div class="sat-legend-dot" style="background:rgba(34,197,94,.15);border-color:rgba(34,197,94,.3)"></div>
+        <span>Present</span>
+      </div>
+      <div class="sat-legend-item">
+        <div class="sat-legend-dot" style="background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.3)"></div>
+        <span>Absent</span>
+      </div>
+      <div class="sat-legend-item">
+        <div class="sat-legend-dot" style="background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.3)"></div>
+        <span>Late</span>
+      </div>
+      <div class="sat-legend-item">
+        <div class="sat-legend-dot" style="background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.3)"></div>
+        <span>Excused</span>
+      </div>
+    </div>`;
+ 
+  wrap.innerHTML = `
+    ${legend}
+    <div class="sat-table-wrap">
+      <table id="sAttTable">
+        <thead>
+          <tr>
+            <th class="sat-th-info">Session Info</th>
+            <th class="sat-th-rate">My Rate</th>
+            ${colHeaders}
+          </tr>
+        </thead>
+        <tbody>
+          <tr data-search="${dates.join(' ').toLowerCase()}">
+            <td class="sat-td-info">
+              <div class="sat-td-info-inner">
+                <div style="width:36px;height:36px;border-radius:10px;
+                            background:linear-gradient(135deg,${subj.color}33,${subj.color}11);
+                            border:1.5px solid ${subj.color}44;
+                            display:grid;place-items:center;flex-shrink:0">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${subj.color}"
+                       stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+                    <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+                  </svg>
+                </div>
+                <div style="min-width:0">
+                  <div style="font-size:12.5px;font-weight:700;color:var(--ink2);
+                              white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                    ${escapeHTML(subj.name)}
+                  </div>
+                  <div style="font-size:10.5px;color:var(--ink5);margin-top:2px">
+                    ${escapeHTML(subj.className || '')}
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td class="sat-td-rate">
+              <div style="font-size:14px;font-weight:800;color:${rateColor};line-height:1">${pct}%</div>
+              <div style="height:4px;border-radius:99px;background:rgba(15,23,42,.08);margin:5px 0;overflow:hidden">
+                <div style="height:100%;width:${pct}%;background:${rateColor};border-radius:99px"></div>
+              </div>
+              <div style="font-size:9px;color:var(--ink5);font-weight:600">${p}P · ${a}A${l > 0 ? ` · ${l}L` : ''}</div>
+            </td>
+            ${cells}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="text-align:center;padding:14px 0 0;font-size:11px;color:var(--ink5)">
+      Showing ${dates.length} session${dates.length !== 1 ? 's' : ''} · ${SEMESTER_AY}
+    </div>`;
+}
+ 
+// ── Filters ───────────────────────────────────────────────────────────
+ 
+function applyStudentFilters() {
+  const panel = document.getElementById('studentAttendancePanel');
+  if (!panel) return;
+ 
+  const wrap = document.getElementById('sAttTableWrap');
+  if (!wrap || !wrap._allRecords) return;
+ 
+  const query    = (document.getElementById('sAttSearch')?.value || '').toLowerCase();
+  const dateFrom = document.getElementById('sAttDateFrom')?.value;
+  const dateTo   = document.getElementById('sAttDateTo')?.value;
+  const fromTs   = dateFrom ? new Date(dateFrom + 'T00:00:00Z').getTime() : null;
+  const toTs     = dateTo   ? new Date(dateTo   + 'T23:59:59Z').getTime() : null;
+ 
+  let records = wrap._allRecords;
+ 
+  if (fromTs || toTs) {
+    records = records.filter(r => {
+      const raw = r.date || r.marked_at || r.created_at;
+      const d   = new Date(raw + (r.date ? 'T00:00:00Z' : ''));
+      const ts  = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+      if (fromTs && ts < fromTs) return false;
+      if (toTs   && ts > toTs)   return false;
+      return true;
+    });
+  }
+ 
+  _renderStudentGridFromRecords(records, wrap._subj);
+ 
+  // Apply text search on column headers after render
+  if (query) {
+    document.querySelectorAll('#sAttTable thead th.sat-th-date').forEach(th => {
+      const text = th.textContent.toLowerCase();
+      const ci = th.cellIndex;
+      th.style.opacity = text.includes(query) ? '1' : '0.25';
+      // Dim corresponding body cells
+      document.querySelectorAll(`#sAttTable tbody tr td:nth-child(${ci + 1})`).forEach(td => {
+        td.style.opacity = text.includes(query) ? '1' : '0.25';
+      });
+    });
+  }
+}
+ 
+// ── CSV export ────────────────────────────────────────────────────────
+ 
+function exportStudentAttendanceCSV(subj, records) {
+  if (!records || records.length === 0) {
+    showToast('No records to export', 'error'); return;
+  }
+ 
+  // Same pivot as the grid
+  const dateSet = new Set();
+  records.forEach(r => {
+    const raw = r.date || r.marked_at || r.created_at;
+    const d = studentToDisplayDate(new Date(raw + (r.date ? 'T00:00:00Z' : '')));
+    if (d) dateSet.add(d);
+  });
+  const dates = [...dateSet].sort((a, b) => new Date(a) - new Date(b));
+ 
+  const lookup = {};
+  records.forEach(r => {
+    const raw = r.date || r.marked_at || r.created_at;
+    const d = studentToDisplayDate(new Date(raw + (r.date ? 'T00:00:00Z' : '')));
+    if (d && !lookup[d]) lookup[d] = r.status;
+  });
+ 
+  let p = 0, a = 0, l = 0;
+  const cells = dates.map(d => {
+    const s = lookup[d];
+    if (s === 'present') p++;
+    else if (s === 'absent') a++;
+    else if (s === 'late') l++;
+    if (!s || s === 'na') return '—';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  });
+  const total = p + a + l;
+  const rate = total ? Math.round((p / total) * 100) + '%' : '—';
+ 
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+ 
+  const header = ['Subject', 'Class', ...dates, 'Present', 'Absent', 'Late', 'Rate'];
+  const row    = [subj.name, subj.className || '', ...cells, p, a, l, rate];
+ 
+  const csv = [header.map(esc).join(','), row.map(esc).join(',')].join('\n');
+ 
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a2 = document.createElement('a');
+  a2.href = URL.createObjectURL(blob);
+  a2.download = `${subj.name}_attendance.csv`.replace(/[^a-z0-9_\-\.]/gi, '_');
+  document.body.appendChild(a2);
+  a2.click();
+  document.body.removeChild(a2);
+  URL.revokeObjectURL(a2.href);
+  showToast('CSV exported!', 'success');
+}
+ 
+// ── Patch showView to use new renderAttendanceView ────────────────────
+// Replace the original showView call for 'attendanceView':
+//   if(id==='attendanceView'){ renderSummaryChips(); renderSubjectLegend(); renderTable(); }
+// With:
+//   if(id==='attendanceView')  renderAttendanceView();
+//
+// Also expose openStudentAttendanceGrid globally
+window.openStudentAttendanceGrid = openStudentAttendanceGrid;

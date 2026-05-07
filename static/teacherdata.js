@@ -1013,10 +1013,19 @@ apiFetch(`/api/enrolled-students/${cls.id}/${subject.id}`)
                 padding:16px 24px 0;flex-shrink:0"></div>
 
     <!-- ── Search / filter bar ── -->
-    <div style="padding:12px 24px;display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <div style="padding:12px 24px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap">
       <input id="attSearchInput" type="text" class="att-search-input"
         placeholder="Search student…" />
-      <input id="attDateFilter" type="date" class="att-date-input" />
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <input id="attDateFrom" type="date" class="att-date-input"
+          title="From date" />
+        <span style="color:var(--text-sub);font-size:12px;font-weight:600">to</span>
+        <input id="attDateTo" type="date" class="att-date-input"
+          title="To date" />
+        <button id="attDateClearBtn" class="att-action-btn"
+          style="padding:6px 10px;font-size:11px;border-color:rgba(239,68,68,.3);color:#f87171"
+          title="Clear date filter">✕ Clear</button>
+      </div>
     </div>
 
     <!-- ── Excel grid ── -->
@@ -1040,8 +1049,14 @@ apiFetch(`/api/enrolled-students/${cls.id}/${subject.id}`)
   });
   document.getElementById('attImportBtn').addEventListener('click', () => openImportModal(cls, subject));
   document.getElementById('attExportBtn').addEventListener('click', () => exportAttendanceCSV(cls, subject));
-  document.getElementById('attSearchInput').addEventListener('input', applyAttendanceFilters);
-  document.getElementById('attDateFilter').addEventListener('change', applyAttendanceFilters);
+document.getElementById('attSearchInput').addEventListener('input', applyAttendanceFilters);
+  document.getElementById('attDateFrom').addEventListener('change', applyAttendanceFilters);
+  document.getElementById('attDateTo').addEventListener('change', applyAttendanceFilters);
+  document.getElementById('attDateClearBtn').addEventListener('click', () => {
+    document.getElementById('attDateFrom').value = '';
+    document.getElementById('attDateTo').value   = '';
+    applyAttendanceFilters();
+  });
 
   document.getElementById('attEditBtn').addEventListener('click', () => {
     excelState.isEditMode = true;
@@ -1252,28 +1267,44 @@ function applyAttendanceFilters() {
   if (!wrap || !wrap.dataset.records) return;
 
   let records = JSON.parse(wrap.dataset.records);
-  const dateFilter = document.getElementById('attDateFilter')?.value;
+  const dateFrom = document.getElementById('attDateFrom')?.value;
+  const dateTo   = document.getElementById('attDateTo')?.value;
 
-  if (dateFilter) {
+  // Convert "YYYY-MM-DD" filter values to UTC midnight timestamps for comparison
+  const fromTs = dateFrom ? new Date(dateFrom + 'T00:00:00Z').getTime() : null;
+  const toTs   = dateTo   ? new Date(dateTo   + 'T23:59:59Z').getTime() : null;
+
+  if (fromTs || toTs) {
     records = records.filter(r => {
       const ts = r.marked_at || r.created_at;
       if (!ts) return false;
       const d = new Date(ts);
-      const recDate = d.getUTCFullYear() + '-'
-        + String(d.getUTCMonth() + 1).padStart(2, '0') + '-'
-        + String(d.getUTCDate()).padStart(2, '0');
-      return recDate === dateFilter;
+      // Use UTC date parts to avoid timezone day-shift
+      const recTs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+      if (fromTs && recTs < fromTs) return false;
+      if (toTs   && recTs > toTs)   return false;
+      return true;
     });
   }
 
   buildStatsRow(records);
 
   if (records.length === 0) {
+    const msg = (fromTs || toTs)
+      ? `No records found ${dateFrom && dateTo
+          ? `between <strong>${dateFrom}</strong> and <strong>${dateTo}</strong>`
+          : dateFrom
+            ? `from <strong>${dateFrom}</strong>`
+            : `until <strong>${dateTo}</strong>`}`
+      : 'No records found';
+
     wrap.innerHTML = `
       <div style="padding:48px 20px;text-align:center">
         <div style="font-size:24px;margin-bottom:8px">📅</div>
-        <div style="font-size:14px;font-weight:700;color:#e8f2ff">No records for this filter</div>
-        <div style="font-size:12px;color:var(--text-sub)">Try clearing the date filter.</div>
+        <div style="font-size:14px;font-weight:700;color:#e8f2ff">${msg}</div>
+        <div style="font-size:12px;color:var(--text-sub);margin-top:6px">
+          Try adjusting or clearing the date range.
+        </div>
       </div>`;
     return;
   }
@@ -1346,7 +1377,7 @@ records.forEach(r => {
 });
   const isEdit = excelState.isEditMode;
 
-  // ── Column headers ───────────────────────────────────────────────
+ // ── Column headers ───────────────────────────────────────────────
   const colHeaders = dates.map((d, ci) => {
     const { day, mon, year } = fmtColDate(d);
     return `
@@ -1355,6 +1386,16 @@ records.forEach(r => {
           <div class="att-th-date-mon">${mon}</div>
           <div class="att-th-date-day">${day}</div>
           <div class="att-th-date-year">${year}</div>
+          ${isEdit ? `
+            <button class="att-delete-date-btn" data-date="${escapeHTML(d)}"
+              title="Delete all records for ${escapeHTML(d)}"
+              style="margin-top:5px;padding:2px 7px;border-radius:5px;border:1px solid rgba(239,68,68,.35);
+                     background:rgba(239,68,68,.1);color:#f87171;font-size:9px;font-weight:700;
+                     cursor:pointer;transition:all .15s;display:block;width:100%"
+              onmouseover="this.style.background='rgba(239,68,68,.25)';this.style.color='#fff'"
+              onmouseout="this.style.background='rgba(239,68,68,.1)';this.style.color='#f87171'">
+              🗑 Delete
+            </button>` : ''}
         </div>
       </th>`;
   }).join('');
@@ -1468,7 +1509,19 @@ const rows = students.map((st, ri) => {
                       <option value="">— Keep unlinked —</option>
                       ${opts}
                     </select>
-                  </div>`;
+                  </div>
+                  <button class="att-delete-student-btn"
+                    data-student-name="${escapeHTML(st.name)}"
+                    data-student-email="${escapeHTML(st.email)}"
+                    title="Delete all records for ${escapeHTML(st.name)}"
+                    style="margin-top:5px;width:100%;padding:3px 6px;border-radius:5px;
+                           border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.1);
+                           color:#f87171;font-size:10px;font-weight:700;cursor:pointer;
+                           transition:all .15s;text-align:center"
+                    onmouseover="this.style.background='rgba(239,68,68,.25)';this.style.color='#fff'"
+                    onmouseout="this.style.background='rgba(239,68,68,.1)';this.style.color='#f87171'">
+                    🗑 Delete Student
+                  </button>`;
               })() : `
                 <div class="att-student-name">${escapeHTML(st.name)}</div>
                 <div class="att-student-email" style="${!st.email || st.email.startsWith('import_') ? 'color:#f59e0b;font-style:italic' : ''}">
@@ -1531,7 +1584,9 @@ const rows = students.map((st, ri) => {
     </div>`;
 
   // ── Attach click listeners for edit mode ──────────────────────────
+  // ── Attach click listeners for edit mode ──────────────────────────
   if (isEdit) {
+    // Cell toggle clicks
     wrap.querySelectorAll('.att-cell-inner.editable').forEach(cell => {
       cell.addEventListener('click', () => {
         const key = cell.dataset.key;
@@ -1540,7 +1595,6 @@ const rows = students.map((st, ri) => {
           : (cell.dataset.status || null);
         const next = statusCycle(cur);
 
-        // 'na' means delete/no record — store as empty string to signal deletion
         excelState.pendingChanges[key] = next;
 
         const s = cellStyle(next);
@@ -1555,17 +1609,148 @@ const rows = students.map((st, ri) => {
         };
         cell.innerHTML = labelMap[next] || '—';
 
-        // Re-add pending dot
         const dot = document.createElement('span');
         dot.style.cssText = 'position:absolute;top:5px;right:5px;width:6px;height:6px;' +
           'border-radius:50%;background:#f59e0b;pointer-events:none';
         cell.appendChild(dot);
         cell.dataset.status = next;
 
-        // Flash border
         cell.style.outline = '2px solid #f59e0b';
         cell.style.outlineOffset = '-2px';
         setTimeout(() => { cell.style.outline = ''; cell.style.outlineOffset = ''; }, 500);
+      });
+    });
+
+    // ── Delete DATE column ──────────────────────────────────────────
+    wrap.querySelectorAll('.att-delete-date-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const dateStr = btn.dataset.date;
+
+        // Count how many records will be deleted
+        const affected = excelState.allRecords.filter(r => {
+          const ts = r.marked_at || r.created_at;
+          return toDisplayDate(ts) === dateStr;
+        });
+
+        if (affected.length === 0) {
+          showToast('No records found for this date.', 'info');
+          return;
+        }
+
+        // Warning confirm
+        const confirmed = await showConfirm(
+          `Delete ALL ${affected.length} attendance record(s) for ${dateStr}?\n\nThis will permanently remove every student's record on this date and cannot be undone.`
+        );
+        if (!confirmed) return;
+
+        btn.disabled    = true;
+        btn.textContent = '…';
+
+        let deleted = 0, failed = 0;
+        for (const r of affected) {
+          try {
+            await apiFetch(`/api/attendance/${r.id}`, {
+              method:  'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            deleted++;
+          } catch {
+            failed++;
+          }
+        }
+
+        // Remove from local state
+        excelState.allRecords = excelState.allRecords.filter(r => {
+          const ts = r.marked_at || r.created_at;
+          return toDisplayDate(ts) !== dateStr;
+        });
+
+        // Refresh grid
+        const wrap2 = document.getElementById('attendanceTableWrap');
+        if (wrap2) wrap2.dataset.records = JSON.stringify(excelState.allRecords);
+
+        if (excelState.allRecords.length === 0) {
+          buildStatsRow([]);
+          renderEmptyAttendanceTable();
+        } else {
+          rerenderGrid();
+        }
+
+        if (failed === 0) {
+          showToast(`Deleted ${deleted} record(s) for ${dateStr}.`, 'success');
+        } else {
+          showToast(`${deleted} deleted, ${failed} failed.`, 'info');
+        }
+      });
+    });
+
+    // ── Delete STUDENT (all their records) ──────────────────────────
+    wrap.querySelectorAll('.att-delete-student-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const studentName  = btn.dataset.studentName;
+        const studentEmail = btn.dataset.studentEmail;
+
+        // Match by email if real, otherwise by name
+        const affected = excelState.allRecords.filter(r => {
+          if (isRealEmail(studentEmail)) {
+            return r.student_email === studentEmail;
+          }
+          return (r.student_name || '').toLowerCase().trim() ===
+                 (studentName || '').toLowerCase().trim();
+        });
+
+        if (affected.length === 0) {
+          showToast('No records found for this student.', 'info');
+          return;
+        }
+
+        // Warning confirm
+        const confirmed = await showConfirm(
+          `Delete ALL ${affected.length} attendance record(s) for "${studentName}"?\n\nThis will permanently remove every date entry for this student and cannot be undone.`
+        );
+        if (!confirmed) return;
+
+        btn.disabled    = true;
+        btn.textContent = '…';
+
+        let deleted = 0, failed = 0;
+        for (const r of affected) {
+          try {
+            await apiFetch(`/api/attendance/${r.id}`, {
+              method:  'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            deleted++;
+          } catch {
+            failed++;
+          }
+        }
+
+        // Remove from local state
+        excelState.allRecords = excelState.allRecords.filter(r => {
+          if (isRealEmail(studentEmail)) {
+            return r.student_email !== studentEmail;
+          }
+          return (r.student_name || '').toLowerCase().trim() !==
+                 (studentName || '').toLowerCase().trim();
+        });
+
+        // Refresh grid
+        const wrap2 = document.getElementById('attendanceTableWrap');
+        if (wrap2) wrap2.dataset.records = JSON.stringify(excelState.allRecords);
+
+        if (excelState.allRecords.length === 0) {
+          buildStatsRow([]);
+          renderEmptyAttendanceTable();
+        } else {
+          rerenderGrid();
+        }
+
+        if (failed === 0) {
+          showToast(`Deleted ${deleted} record(s) for "${studentName}".`, 'success');
+        } else {
+          showToast(`${deleted} deleted, ${failed} failed.`, 'info');
+        }
       });
     });
   }
@@ -1754,63 +1939,123 @@ function exportAttendanceCSV(cls, subject) {
   if (!wrap?.dataset.records) { showToast('No records to export', 'error'); return; }
 
   let records = JSON.parse(wrap.dataset.records);
-  const dateFilter = document.getElementById('attDateFilter')?.value;
-  if (dateFilter) {
+const dateFrom = document.getElementById('attDateFrom')?.value;
+  const dateTo   = document.getElementById('attDateTo')?.value;
+  const fromTs   = dateFrom ? new Date(dateFrom + 'T00:00:00Z').getTime() : null;
+  const toTs     = dateTo   ? new Date(dateTo   + 'T23:59:59Z').getTime() : null;
+
+  if (fromTs || toTs) {
     records = records.filter(r => {
       const ts = r.marked_at || r.created_at;
       if (!ts) return false;
-      const d = new Date(ts);
-      return (d.getFullYear() + '-' +
-        String(d.getMonth() + 1).padStart(2, '0') + '-' +
-        String(d.getDate()).padStart(2, '0')) === dateFilter;
+      const d   = new Date(ts);
+      const rec = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+      if (fromTs && rec < fromTs) return false;
+      if (toTs   && rec > toTs)   return false;
+      return true;
     });
   }
 
+  if (records.length === 0) {
+    showToast('No records to export', 'error'); return;
+  }
+
+  // ── Build pivot exactly like renderAttendanceTable does ───────────
   const studentMap = new Map();
   const dateSet    = new Set();
+
   records.forEach(r => {
-    const key  = r.student_email || r.student_name || 'unknown';
-    const ts   = r.marked_at || r.created_at;
-    const dObj = ts ? new Date(ts) : null;
-    const dStr = toDisplayDate(ts);
-    if (!studentMap.has(key)) studentMap.set(key, { name: r.student_name || key, email: key });
-    if (dStr) dateSet.add(dStr);
-  });
-  const dates    = [...dateSet].sort((a, b) => new Date(a) - new Date(b));
-  const students = [...studentMap.values()].sort((a, b) => a.name.localeCompare(b.name));
-  const lookup   = {};
-  records.forEach(r => {
-    const key  = r.student_email || r.student_name || 'unknown';
-    const ts   = r.marked_at || r.created_at;
-    const dObj = ts ? new Date(ts) : null;
-    const dStr = dObj
-      ? dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : null;
-    if (dStr) lookup[`${key}|${dStr}`] = r.status;
+    const ts      = r.marked_at || r.created_at;
+    const dStr    = toDisplayDate(ts);  // "May 1, 2025"
+    const nameKey = (r.student_name || '').toLowerCase().trim();
+    if (!nameKey || !dStr) return;
+
+    if (!studentMap.has(nameKey)) {
+      studentMap.set(nameKey, {
+        name:  r.student_name,
+        email: r.student_email || '',
+      });
+    }
+
+    const entry = studentMap.get(nameKey);
+    if (isRealEmail(r.student_email) && !isRealEmail(entry.email)) {
+      entry.email = r.student_email;
+    }
+
+    dateSet.add(dStr);
   });
 
-  const header = ['Student Name', 'Email', ...dates, 'Attendance Rate'];
-  const rows   = students.map(st => {
+  // ── Sort dates chronologically using the same display strings ─────
+  const dates = [...dateSet].sort((a, b) => {
+    return new Date(a).getTime() - new Date(b).getTime();
+  });
+
+  // ── Sort students alphabetically ──────────────────────────────────
+  const students = [...studentMap.values()].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+
+  // ── Build lookup: "nameKey|dStr" → status ─────────────────────────
+  const lookup = {};
+  records.forEach(r => {
+    const ts      = r.marked_at || r.created_at;
+    const dStr    = toDisplayDate(ts);
+    const nameKey = (r.student_name || '').toLowerCase().trim();
+    if (!dStr || !nameKey) return;
+    const key = `${nameKey}|${dStr}`;
+    // Don't overwrite a real status with a weaker one
+    if (!lookup[key] || lookup[key] === 'na') {
+      lookup[key] = r.status;
+    }
+  });
+
+  // ── Build CSV ─────────────────────────────────────────────────────
+  const headerRow = [
+    'Student Name',
+    'Email',
+    ...dates,
+    'Present',
+    'Absent',
+    'Late',
+    'Attendance Rate',
+  ];
+
+  const dataRows = students.map(st => {
+    const nameKey = st.name.toLowerCase().trim();
     let p = 0, a = 0, l = 0;
+
     const cells = dates.map(d => {
-      const s = lookup[`${st.email}|${d}`] || '';
-      if (s === 'present') p++;
-      else if (s === 'absent') a++;
-      else if (s === 'late') l++;
-      return s ? s.charAt(0).toUpperCase() + s.slice(1) : '—';
+      const status = lookup[`${nameKey}|${d}`];
+      if (status === 'present') p++;
+      else if (status === 'absent') a++;
+      else if (status === 'late') l++;
+
+      if (!status || status === 'na') return '—';
+      return status.charAt(0).toUpperCase() + status.slice(1);
     });
-    const tot = p + a + l;
-    const pct = tot ? Math.round((p / tot) * 100) + '%' : '—';
-    return [st.name, st.email, ...cells, pct]
-      .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+
+    const total = p + a + l;
+    const pct   = total ? Math.round((p / total) * 100) + '%' : '—';
+
+    return [st.name, st.email || '—', ...cells, p, a, l, pct];
   });
 
-  const csv  = [header.join(','), ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  // ── Serialize to CSV string ───────────────────────────────────────
+  const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [
+    headerRow.map(escape).join(','),
+    ...dataRows.map(row => row.map(escape).join(',')),
+  ].join('\n');
+
+  // ── Trigger download ──────────────────────────────────────────────
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = `${cls.class_name}_${subject.subject}_attendance.csv`.replace(/\s+/g, '_');
+  a.download = `${cls.class_name}_${subject.subject}_attendance.csv`
+    .replace(/[^a-z0-9_\-\.]/gi, '_');
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
   showToast('CSV exported!', 'success');
 }
@@ -3082,6 +3327,7 @@ async function updateTeacherNotifications() {
     }
     previousPendingCount = reqs.length;
 
+    // ── Update notification dot ───────────────────────────────────
     const notifBtn = document.getElementById('notifBtn');
     let dot = notifBtn?.querySelector('.notif-dot');
     if (!dot && notifBtn) {
@@ -3090,37 +3336,43 @@ async function updateTeacherNotifications() {
       dot.style.cssText = 'position:absolute;top:6px;right:8px;width:8px;height:8px;background:#ef4444;border-radius:50%;';
       notifBtn.appendChild(dot);
     }
-    
+    if (dot) dot.style.display = reqs.length > 0 ? 'block' : 'none';
+
+    // ── Update notification dropdown ──────────────────────────────
     const dropdown = document.getElementById('notifDropdown');
-    if (!dropdown) return;
-    
-    let container = dropdown.querySelector('.card-body');
-    if (!container) {
-      dropdown.innerHTML = '<div class="card-body" style="padding:0;max-height:300px;overflow-y:auto"></div>';
-      container = dropdown.querySelector('.card-body');
+    if (dropdown) {
+      let container = dropdown.querySelector('.card-body');
+      if (!container) {
+        dropdown.innerHTML = '<div class="card-body" style="padding:0;max-height:300px;overflow-y:auto"></div>';
+        container = dropdown.querySelector('.card-body');
+      }
+
+      if (reqs.length > 0) {
+        container.innerHTML = reqs.map(r => `
+          <div style="padding:12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;background:var(--surface,#fff)">
+            <div style="font-size:13px;line-height:1.4">
+              <strong style="color:var(--ink2)">${escapeHTML(r.student_name)}</strong> wants to join 
+              <strong style="color:var(--ink2)">${escapeHTML(r.subject_name)}</strong><br>
+              <span style="font-size:11px;color:var(--ink5)">${escapeHTML(r.class_name)}</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button onclick="handleEnrollmentRequest(${r.id}, 'approve')" style="flex:1;padding:6px;border:none;border-radius:6px;background:#10B981;color:white;cursor:pointer;font-size:11px;font-weight:600">Approve</button>
+              <button onclick="handleEnrollmentRequest(${r.id}, 'reject')" style="flex:1;padding:6px;border:none;border-radius:6px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;font-weight:600">Reject</button>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--ink5);font-size:13px">No pending enrollment requests.</div>';
+      }
     }
 
-    if (reqs.length > 0) {
-      if (dot) dot.style.display = 'block';
-      container.innerHTML = reqs.map(r => `
-        <div style="padding:12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;background:var(--surface,#fff)">
-          <div style="font-size:13px;line-height:1.4">
-            <strong style="color:var(--ink2)">${escapeHTML(r.student_name)}</strong> wants to join 
-            <strong style="color:var(--ink2)">${escapeHTML(r.subject_name)}</strong><br>
-            <span style="font-size:11px;color:var(--ink5)">${escapeHTML(r.class_name)}</span>
-          </div>
-          <div style="display:flex;gap:6px">
-            <button onclick="handleEnrollmentRequest(${r.id}, 'approve')" style="flex:1;padding:6px;border:none;border-radius:6px;background:#10B981;color:white;cursor:pointer;font-size:11px;font-weight:600">Approve</button>
-            <button onclick="handleEnrollmentRequest(${r.id}, 'reject')" style="flex:1;padding:6px;border:none;border-radius:6px;background:rgba(239,68,68,0.1);color:#ef4444;cursor:pointer;font-size:11px;font-weight:600">Reject</button>
-          </div>
-        </div>
-      `).join('');
-    } else {
-      if (dot) dot.style.display = 'none';
-      container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--ink5);font-size:13px">No pending enrollment requests.</div>';
+    // ── Only update the pending box if NOT in attendance view ─────
+    // Updating the dash-grid DOM while attendance panel is open
+    // would wipe wrap.dataset.records and lose the loaded records
+    if (state.currentView !== 'attendance') {
+      updatePendingEnrollmentsBox(reqs);
     }
-    
-    updatePendingEnrollmentsBox(reqs);
+
   } catch (e) {
     console.error('Failed to load notifications:', e);
   }
@@ -3201,10 +3453,22 @@ window.handleEnrollmentRequest = async function(id, action) {
     });
     if (res.success) {
       showToast(action === 'approve' ? 'Student approved!' : 'Request rejected.', 'success');
+
+      // Always refresh notifications (safe — now guarded against DOM wipe)
       updateTeacherNotifications();
-      // FIX 3: only reload classes if attendance panel is NOT open
-      if (state.currentView !== 'attendance' && window.loadClasses) {
-        loadClasses();
+
+      if (state.currentView === 'attendance') {
+        // Refresh enrolled students list so the new student appears
+        // in the import match dropdown — but DO NOT reload classes
+        // or touch the attendance grid DOM
+        if (excelState.classRef && excelState.subjectRef) {
+          apiFetch(`/api/enrolled-students/${excelState.classRef.id}/${excelState.subjectRef.id}`)
+            .then(data => { excelState.enrolledStudents = data.students || []; })
+            .catch(() => {});
+        }
+      } else {
+        // Safe to do a full reload when not in attendance view
+        if (window.loadClasses) loadClasses();
       }
     }
   } catch (e) {
@@ -3745,34 +4009,82 @@ function normalizeStatus(raw) {
 }
 
 // ── Show preview step ────────────────────────────────────────────────
-function showImportPreview(rawRows, cls, subject) {
-  if (!rawRows || rawRows.length < 2) {
-    showToast('File appears empty or unreadable.', 'error'); return;
-  }
-
-  // Auto-detect header row
-  const header = rawRows[0].map(h => String(h).trim().toLowerCase());
+function detectImportFormat(header) {
+  // Returns 'long' (one row per record) or 'wide' (pivot: student | date1 | date2 ...)
   const nameCol   = header.findIndex(h => h.includes('name') || h.includes('student'));
   const dateCol   = header.findIndex(h => h.includes('date'));
   const statusCol = header.findIndex(h =>
     h.includes('status') || h.includes('attendance') || h.includes('present') || h.includes('absent'));
 
-  if (nameCol === -1) {
+  // If there's a dedicated date column → long format
+  if (nameCol !== -1 && dateCol !== -1) return { format: 'long', nameCol, dateCol, statusCol };
+
+  // If multiple columns look like dates → wide/pivot format
+  const dateCols = [];
+  header.forEach((h, i) => {
+    if (i === nameCol) return;
+    const normalized = normalizeDate(h);
+    if (normalized && normalized !== h) dateCols.push({ col: i, dateStr: normalized, raw: h });
+    else {
+      // Try if it parses as a date string like "May 1" or "2025-05-01"
+      const d = new Date(h);
+      if (!isNaN(d.getTime())) dateCols.push({ col: i, dateStr: toDisplayDate(d), raw: h });
+    }
+  });
+
+  if (nameCol !== -1 && dateCols.length >= 2) return { format: 'wide', nameCol, dateCols };
+
+  // Fallback to long with whatever we found
+  return { format: 'long', nameCol, dateCol, statusCol };
+}
+
+function showImportPreview(rawRows, cls, subject) {
+  if (!rawRows || rawRows.length < 2) {
+    showToast('File appears empty or unreadable.', 'error'); return;
+  }
+
+  const header = rawRows[0].map(h => String(h).trim().toLowerCase());
+  const headerRaw = rawRows[0].map(h => String(h).trim());
+  const detected = detectImportFormat(header);
+
+  if (detected.nameCol === -1) {
     showToast('Could not find "Student Name" column. Please check your file.', 'error'); return;
   }
 
-  // Build parsed rows
   const parsed = [];
-  for (let i = 1; i < rawRows.length; i++) {
-    const row = rawRows[i];
-    if (!row || row.every(c => !String(c).trim())) continue;
 
-    const name   = String(row[nameCol] || '').trim();
-    const date   = dateCol   >= 0 ? normalizeDate(row[dateCol])   : null;
-    const status = statusCol >= 0 ? normalizeStatus(row[statusCol]) : null;
+  if (detected.format === 'wide') {
+    // ── WIDE/PIVOT FORMAT ──────────────────────────────────────────
+    // Each row is a student, each date column is a separate record
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      if (!row || row.every(c => !String(c).trim())) continue;
+      const name = String(row[detected.nameCol] || '').trim();
+      if (!name) continue;
 
-    if (!name) continue;
-    parsed.push({ name, date, status, rawRow: row, idx: i });
+      detected.dateCols.forEach(({ col, dateStr }) => {
+        const rawStatus = String(row[col] || '').trim();
+        if (!rawStatus) return; // skip empty cells
+        parsed.push({
+          name,
+          date: dateStr,
+          status: normalizeStatus(rawStatus),
+          rawRow: row,
+          idx: i,
+        });
+      });
+    }
+  } else {
+    // ── LONG FORMAT (original) ─────────────────────────────────────
+    for (let i = 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      if (!row || row.every(c => !String(c).trim())) continue;
+      const name   = String(row[detected.nameCol] || '').trim();
+      const date   = detected.dateCol >= 0 ? normalizeDate(row[detected.dateCol]) : null;
+      const status = detected.statusCol >= 0 ? normalizeStatus(row[detected.statusCol]) : null;
+      if (!name) continue;
+      parsed.push({ name, date, status, rawRow: row, idx: i });
+    }
   }
 
   if (parsed.length === 0) {
@@ -3783,7 +4095,7 @@ function showImportPreview(rawRows, cls, subject) {
   const enrolledStudents = excelState.enrolledStudents || [];
 
   // Store for later
-  window._importData = { rows: parsed, cls, subject, header, nameCol, dateCol, statusCol };
+  window._importData = { rows: parsed, cls, subject, detected };
 
   // Build preview table HTML
   const statusBadge = s => {
@@ -3793,26 +4105,49 @@ function showImportPreview(rawRows, cls, subject) {
   };
 
 
-  const matchOptions = () => {
-  if (enrolledStudents.length === 0) {
-    return `<option value="">— No enrolled students —</option>`;
-  }
-  const opts = enrolledStudents.map(s =>
-    `<option value="${escapeHTML(s.email)}">
-      ${escapeHTML(s.name)} (${escapeHTML(s.email)})
-    </option>`
+  const matchOptions = (rowName) => {
+    if (enrolledStudents.length === 0) {
+      return `<option value="">— No enrolled students —</option>`;
+    }
+
+    // Try to auto-match by comparing name similarity
+    const normalize = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const rowNorm   = normalize(rowName);
+
+    // Find best match — exact first, then partial
+    let bestMatch = enrolledStudents.find(s =>
+      normalize(s.name) === rowNorm
+    );
+    if (!bestMatch) {
+      bestMatch = enrolledStudents.find(s =>
+        normalize(s.name).includes(rowNorm) || rowNorm.includes(normalize(s.name))
+      );
+    }
+
+    const opts = enrolledStudents.map(s =>
+      `<option value="${escapeHTML(s.email)}"
+        ${bestMatch && s.email === bestMatch.email ? 'selected' : ''}>
+        ${escapeHTML(s.name)} (${escapeHTML(s.email)})
+      </option>`
+    ).join('');
+
+    return `<option value="" ${!bestMatch ? 'selected' : ''}>— Select student —</option>${opts}`;
+  };
+
+  // Pre-select status option helper
+  const statusOpts = (current) => ['present','absent','late'].map(s =>
+    `<option value="${s}" ${current === s ? 'selected' : ''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`
   ).join('');
-  return `<option value="">— Select student —</option>${opts}`;
-};
 
   let previewHTML = `
-    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
       <div>
         <div style="font-size:14px;font-weight:700;color:#e8f2ff">
-          ${parsed.length} records found
+          ${parsed.length} record${parsed.length !== 1 ? 's' : ''} found
+          ${detected.format === 'wide' ? `<span style="margin-left:8px;padding:2px 8px;border-radius:99px;background:rgba(79,172,254,.15);color:rgba(79,172,254,.8);font-size:11px;font-weight:600">Wide/Pivot format</span>` : ''}
         </div>
         <div style="font-size:11.5px;color:rgba(79,172,254,.5);margin-top:2px">
-          Review each row. Edit status or date if needed, and match students to enrolled records.
+          Review each row. Edit status or date if needed.
         </div>
       </div>
     </div>
@@ -3829,12 +4164,12 @@ function showImportPreview(rawRows, cls, subject) {
         </thead>
         <tbody id="impPreviewTableBody">
           ${parsed.map((r, ri) => `
-            <tr data-idx="${ri}">
+            <tr data-idx="${ri}" style="${ri % 2 === 0 ? '' : 'background:rgba(79,172,254,.04)'}">
               <td style="color:rgba(79,172,254,.4);font-family:monospace">${ri + 1}</td>
               <td style="font-weight:600;color:#e8f2ff">${escapeHTML(r.name)}</td>
               <td>
                 <select class="imp-match-select" data-row="${ri}" id="impMatch_${ri}">
-                  ${matchOptions()}
+                  ${matchOptions(r.name)}
                 </select>
               </td>
               <td>
@@ -3847,11 +4182,9 @@ function showImportPreview(rawRows, cls, subject) {
               </td>
               <td>
                 <select class="imp-match-select" data-row="${ri}" id="impStatus_${ri}"
-                        style="width:100px">
+                        style="width:110px">
                   <option value="">—</option>
-                  <option value="present" selected>Present</option>
-                  <option value="absent">Absent</option>
-                  <option value="late">Late</option>
+                  ${statusOpts(r.status || 'present')}
                 </select>
               </td>
             </tr>`).join('')}
@@ -3894,7 +4227,7 @@ function importGoBack() {
 
 function importGoNext() {
   // Collect all edited values from step 2
-  const { rows } = window._importData;
+  const { rows, cls, subject } = window._importData;
   const finalRows = [];
   let warnings = 0;
 
@@ -3916,28 +4249,58 @@ function importGoNext() {
   window._importData.finalRows = finalRows;
 
   // Build confirm summary
- const valid   = finalRows.filter(r => r.status && r.date);
-const noMatch = finalRows.filter(r => !r.matchedEmail);
+  const valid    = finalRows.filter(r => r.status && r.date);
+  const noMatch  = finalRows.filter(r => !r.matchedEmail);
   const noStatus = finalRows.filter(r => !r.status);
-  const noDate  = finalRows.filter(r => !r.date);
+  const noDate   = finalRows.filter(r => !r.date);
+
+  // Count unique students (deduplicate by name, ignoring multiple dates)
+  const uniqueStudents    = new Set(valid.map(r => r.name.toLowerCase().trim()));
+  const uniqueNoMatch     = new Set(noMatch.filter(r => r.status && r.date).map(r => r.name.toLowerCase().trim()));
+  const uniqueDates       = new Set(valid.map(r => r.date));
+
+  // Count updates vs new inserts by checking against existing records
+  const normalize = s => (s || '').toLowerCase().trim();
+  let willUpdate = 0, willInsert = 0;
+  valid.forEach(row => {
+    const incomingDate = row.date
+      ? toDisplayDate(new Date(row.date + 'T00:00:00Z'))
+      : null;
+    const exists = excelState.allRecords.find(r => {
+      const ts = r.marked_at || r.created_at;
+      if (!ts) return false;
+      if (toDisplayDate(ts) !== incomingDate) return false;
+      if (row.matchedEmail && isRealEmail(row.matchedEmail)) {
+        return r.student_email === row.matchedEmail;
+      }
+      return normalize(r.student_name) === normalize(row.name);
+    });
+    if (exists) willUpdate++; else willInsert++;
+  });
 
   const confirmHTML = `
     <div class="imp-summary-box">
       <div style="font-size:14px;font-weight:700;color:#22c55e;margin-bottom:10px">
         ✓ Ready to import ${valid.length} record${valid.length !== 1 ? 's' : ''}
+        for ${uniqueStudents.size} student${uniqueStudents.size !== 1 ? 's' : ''}
+        across ${uniqueDates.size} date${uniqueDates.size !== 1 ? 's' : ''}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
         <div style="text-align:center">
-          <div style="font-size:22px;font-weight:800;color:#22c55e">${valid.length}</div>
-          <div style="font-size:11px;color:rgba(79,172,254,.5)">Will be saved</div>
+          <div style="font-size:22px;font-weight:800;color:#22c55e">${uniqueStudents.size}</div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">Unique students</div>
         </div>
         <div style="text-align:center">
-          <div style="font-size:22px;font-weight:800;color:#f59e0b">${noMatch.length}</div>
-          <div style="font-size:11px;color:rgba(79,172,254,.5)">No student match<br><span style="font-size:9px;opacity:.7">(saved as unlinked)</span></div>
+          <div style="font-size:22px;font-weight:800;color:#4facfe">${willInsert}</div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">New records</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#f59e0b">${willUpdate}</div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">Will update<br><span style="font-size:9px;opacity:.7">(same date exists)</span></div>
         </div>
         <div style="text-align:center">
           <div style="font-size:22px;font-weight:800;color:#ef4444">${finalRows.length - valid.length}</div>
-          <div style="font-size:11px;color:rgba(79,172,254,.5)">Missing data<br><span style="font-size:9px;opacity:.7">(skipped)</span></div>
+          <div style="font-size:11px;color:rgba(79,172,254,.5)">Skipped<br><span style="font-size:9px;opacity:.7">(missing data)</span></div>
         </div>
       </div>
     </div>
@@ -4019,28 +4382,66 @@ async function confirmImport() {
 
   for (const row of valid) {
     try {
-      // Use the row's date, or fall back to today
       const dateToUse = row.date || fallbackDate;
 
-      // Try to find an existing record by email+date (if we have an email match)
-      const existing = row.matchedEmail ? excelState.allRecords.find(r => {
-      const ts = r.marked_at || r.created_at;
-      if (!ts) return false;
-      const dStr = toDisplayDate(ts);   // toDisplayDate accepts a timestamp string directly
-      return r.student_email === row.matchedEmail && dStr === toDisplayDate(new Date(dateToUse));
-      }) : null;
+      // Normalize the incoming date to the same display format toDisplayDate uses
+      // so comparison against existing records is consistent
+      const incomingDateDisplay = toDisplayDate(
+        // row.date is already "YYYY-MM-DD" from the date input
+        // parse it as UTC to avoid timezone day-shift
+        row.date
+          ? new Date(row.date + 'T00:00:00Z')
+          : new Date()
+      );
+
+      // ── Find existing record by name (and optionally email) + date ──
+      const existing = excelState.allRecords.find(r => {
+        const ts = r.marked_at || r.created_at;
+        if (!ts) return false;
+        const recDateDisplay = toDisplayDate(ts);
+
+        // Date must match
+        if (recDateDisplay !== incomingDateDisplay) return false;
+
+        // Match by email first (more reliable)
+        if (row.matchedEmail && isRealEmail(row.matchedEmail)) {
+          return r.student_email === row.matchedEmail;
+        }
+
+        // Fallback: match by name (case-insensitive)
+        return (r.student_name || '').toLowerCase().trim() ===
+               (row.name || '').toLowerCase().trim();
+      });
 
       if (existing) {
-        // UPDATE existing record
-        await apiFetch(`/api/attendance/${existing.id}`, {
-          method:  'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ status: row.status }),
-        });
-        existing.status = row.status;
+        // ── UPDATE existing record ──────────────────────────────────
+        if (existing.status !== row.status) {
+          await apiFetch(`/api/attendance/${existing.id}`, {
+            method:  'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ status: row.status }),
+          });
+          existing.status = row.status;
+
+          // Also update email if we now have a match and it was unlinked before
+          if (row.matchedEmail && isRealEmail(row.matchedEmail) &&
+              !isRealEmail(existing.student_email)) {
+            await apiFetch('/api/attendance/update-student', {
+              method:  'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({
+                origEmail:  existing.student_email || '',
+                newName:    row.name,
+                newEmail:   row.matchedEmail,
+                recordIds:  [existing.id],
+              }),
+            });
+            existing.student_email = row.matchedEmail;
+          }
+        }
         saved++;
       } else {
-        // INSERT new record (even without a matched student)
+        // ── INSERT new record ───────────────────────────────────────
         const newRecord = await apiFetch('/api/attendance/import', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -4066,7 +4467,6 @@ async function confirmImport() {
       failed++;
     }
   }
-
   // Refresh the grid
   const wrap = document.getElementById('attendanceTableWrap');
   if (wrap) wrap.dataset.records = JSON.stringify(excelState.allRecords);

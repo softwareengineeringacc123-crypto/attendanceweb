@@ -869,20 +869,44 @@ app.patch('/api/attendance/:recordId', requireLogin, requireSupabase, async (req
   });
 
   app.get('/api/user-attendance', requireLogin, requireSupabase, async (req, res) => {
-    try {
-      const { data, error } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('student_id', req.session.user.id)
-        .order('created_at', { ascending: false });
+  try {
+    const client = supabaseAdmin || supabase;
 
-      if (error) throw error;
+    // Fetch records matching by student_id OR by student_email
+    // This ensures teacher-imported records (which have student_id=null) are included
+    const { data: byId, error: err1 } = await client
+      .from('attendance')
+      .select('*')
+      .eq('student_id', req.session.user.id)
+      .order('created_at', { ascending: false });
 
-      res.json({ attendance: data || [] });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
+    if (err1) throw err1;
+
+    const { data: byEmail, error: err2 } = await client
+      .from('attendance')
+      .select('*')
+      .eq('student_email', req.session.user.email)
+      .is('student_id', null)   // only unlinked rows — avoids double-counting
+      .order('created_at', { ascending: false });
+
+    if (err2) throw err2;
+
+    // Merge, deduplicate by record id
+    const seen = new Set();
+    const merged = [...(byId || []), ...(byEmail || [])].filter(r => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    });
+
+    // Sort merged result by created_at descending
+    merged.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    res.json({ attendance: merged });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
   app.get('/api/notifications', requireLogin, requireSupabase, async (req, res) => {
     try {
