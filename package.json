@@ -5,6 +5,7 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
+    "build": "echo No build step",
     "dev": "node server.js",
     "start": "node server.js"
   },
