@@ -1866,7 +1866,7 @@ app.delete('/api/attendance/:recordId', requireLogin, requireSupabase, async (re
     res.status(500).json({ error: err.message });
   }
 });
-  const DEFAULT_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
+  const DEFAULT_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   function startServer(port) {
     const server = app.listen(port, () => {
