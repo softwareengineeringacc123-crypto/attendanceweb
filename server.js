@@ -1890,24 +1890,14 @@ app.delete('/api/attendance/:recordId', requireLogin, requireSupabase, async (re
     res.status(500).json({ error: err.message });
   }
 });
-  const DEFAULT_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const port = process.env.PORT || 3000;
 
   function startServer(port) {
     const server = app.listen(port, () => {
-      console.log(`Node attendance app running on http://localhost:${port}`);
-    });
-
-    server.on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        console.warn(`Port ${port} is already in use. Trying port ${port + 1}...`);
-        startServer(port + 1);
-        return;
-      }
-      console.error('Server error:', err);
-      process.exit(1);
-    });
+ console.log(`Node attendance app running on port ${port}`);
+});
   }
   
   
-  startServer(DEFAULT_PORT);
+  startServer(port);
   
