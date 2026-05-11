@@ -91,30 +91,40 @@ async function apiFetch(url, options = {}) {
 }
 
 // Helper function to check if a new schedule overlaps with existing subjects
-function checkScheduleOverlap(newDaysStr, newStart, newEnd, existingSubjects) {
+function checkScheduleOverlap(newDaysStr, newStart, newEnd, existingSubjects, excludeSubjectId = null) {
   if (!newStart || !newEnd || !newDaysStr) return null;
-  const newDays = newDaysStr.split(',').map(d => d.trim());
-  
+  if (newStart === '00:00' && newEnd === '00:00') return null; // skip placeholder times
+
+  const newDays = newDaysStr.split(',').map(d => d.trim()).filter(Boolean);
+
   const toMin = (t) => {
     if (!t) return 0;
     const [h, m] = t.split(':').map(Number);
     return (h * 60) + (m || 0);
   };
+
   const nStart = toMin(newStart);
-  const nEnd = toMin(newEnd);
+  const nEnd   = toMin(newEnd);
+
+  if (nStart >= nEnd) return null; // invalid range — caught elsewhere
 
   for (const subj of existingSubjects) {
     if (!subj.start_time || !subj.end_time || !subj.days) continue;
-    if (subj.start_time === '00:00' && subj.end_time === '00:00') continue; // Skip default 00:00 placeholders
+    if (subj.start_time === '00:00' && subj.end_time === '00:00') continue;
+    if (excludeSubjectId && Math.trunc(Number(subj.id)) === Math.trunc(Number(excludeSubjectId))) continue;
 
-    const eDays = Array.isArray(subj.days) ? subj.days : String(subj.days).split(',').map(d => d.trim());
+    const eDays = Array.isArray(subj.days)
+      ? subj.days
+      : String(subj.days).split(',').map(d => d.trim()).filter(Boolean);
+
     const hasCommonDay = newDays.some(d => eDays.includes(d));
+    if (!hasCommonDay) continue;
 
-    if (hasCommonDay) {
-      const eStart = toMin(subj.start_time);
-      const eEnd = toMin(subj.end_time);
-      if (nStart < eEnd && eStart < nEnd) return subj;
-    }
+    const eStart = toMin(subj.start_time);
+    const eEnd   = toMin(subj.end_time);
+
+    // True overlap: one starts before the other ends
+    if (nStart < eEnd && eStart < nEnd) return subj;
   }
   return null;
 }
@@ -2230,24 +2240,35 @@ function addSubjectToClass() {
   if (!subjectName)  { showToast('Please enter a subject name', 'error'); return; }
   if (!selectedDays) { showToast('Please select at least one day', 'error'); return; }
 
-  // Check for time overlaps
   if (startTime && endTime) {
     if (startTime >= endTime) {
       showToast('End time must be after start time', 'error'); return;
     }
-    const allExisting = [...state.classSubjectsBuffer];
+
+    // Check against other subjects already in the buffer (same modal session)
+    const bufferOverlap = checkScheduleOverlap(selectedDays, startTime, endTime, state.classSubjectsBuffer);
+    if (bufferOverlap) {
+      showToast(`Schedule conflict with "${bufferOverlap.subject}" you just added (${bufferOverlap.days} · ${bufferOverlap.start_time}–${bufferOverlap.end_time})`, 'error');
+      return;
+    }
+
+    // Check against ALL existing subjects across ALL classes
+    const allExisting = [];
     state.classesData.forEach(cls => {
-      (cls.subjects || []).forEach(s => allExisting.push({...s, className: cls.class_name}));
+      (cls.subjects || []).forEach(s => allExisting.push({ ...s, className: cls.class_name }));
     });
-    const overlap = checkScheduleOverlap(selectedDays, startTime, endTime, allExisting);
-    if (overlap) {
-      const loc = overlap.className ? `class: ${overlap.className}` : 'the pending subjects';
-      showToast(`Schedule overlaps with "${overlap.subject}" in ${loc}`, 'error');
+
+    const existing = checkScheduleOverlap(selectedDays, startTime, endTime, allExisting);
+    if (existing) {
+      const loc = existing.className ? `"${existing.className}"` : 'another class';
+      showToast(
+        `Schedule conflict! "${existing.subject}" in ${loc} runs ${existing.start_time}–${existing.end_time} on overlapping days.`,
+        'error'
+      );
       return;
     }
   }
 
-  // Push to buffer
   state.classSubjectsBuffer.push({
     subject:    subjectName,
     start_time: startTime || '00:00',
@@ -2256,17 +2277,12 @@ function addSubjectToClass() {
     days:       selectedDays,
   });
 
-  // Clear inputs for next subject
   ['subjectNameInputClass', 'subjectRoomInputClass']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.querySelectorAll('.subjectDayCheckbox').forEach(cb => (cb.checked = false));
 
-  // Update the display list
   updateSubjectsDisplay();
-
-  // Refocus name input (NOT the add button, which triggered double-submit)
   document.getElementById('subjectNameInputClass')?.focus();
-
   showToast(`"${subjectName}" added. Add another or click Save Class.`, 'success');
 }
 
@@ -2628,17 +2644,22 @@ async function submitSubjectForm() {
   if (!selectedDays) { showToast('Please select at least one day', 'error'); return; }
   
   // Check for time overlaps
+  // Check for time overlaps
   if (startTime && endTime) {
     if (startTime >= endTime) {
       showToast('End time must be after start time', 'error'); return;
     }
     const allExisting = [];
     state.classesData.forEach(cls => {
-      (cls.subjects || []).forEach(s => allExisting.push({...s, className: cls.class_name}));
+      (cls.subjects || []).forEach(s => allExisting.push({ ...s, className: cls.class_name }));
     });
-    const overlap = checkScheduleOverlap(selectedDays, startTime, endTime, allExisting);
-    if (overlap) {
-      showToast(`Schedule overlaps with "${overlap.subject}" in class: ${overlap.className || 'Unknown'}`, 'error');
+    const existing = checkScheduleOverlap(selectedDays, startTime, endTime, allExisting);
+    if (existing) {
+      const loc = existing.className ? `"${existing.className}"` : 'another class';
+      showToast(
+        `Schedule conflict! "${existing.subject}" in ${loc} runs ${existing.start_time}–${existing.end_time} on overlapping days.`,
+        'error'
+      );
       return;
     }
   }
