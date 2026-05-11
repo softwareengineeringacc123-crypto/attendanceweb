@@ -1871,7 +1871,7 @@ function buildStudentGridHTML(subj, records) {
         background: #fff;
         position: sticky;
         top: 0;
-        z-index: 3;
+        z-index: 2;
       }
       .sat-th-info {
         min-width: 180px;
@@ -1884,9 +1884,6 @@ function buildStudentGridHTML(subj, records) {
         letter-spacing: .08em;
         border-right: 2px solid var(--border-c);
         border-bottom: 2px solid #4361ee;
-        position: sticky;
-        left: 0;
-        z-index: 5;
         background: #fff;
       }
       .sat-th-rate {
@@ -1900,9 +1897,6 @@ function buildStudentGridHTML(subj, records) {
         letter-spacing: .08em;
         border-right: 2px solid var(--border-c);
         border-bottom: 2px solid #4361ee;
-        position: sticky;
-        left: 180px;
-        z-index: 4;
         background: #fff;
       }
       .sat-th-date {
@@ -1924,9 +1918,6 @@ function buildStudentGridHTML(subj, records) {
         padding: 0;
         border-right: 2px solid var(--border-c);
         border-bottom: 1.5px solid rgba(15,23,42,.06);
-        position: sticky;
-        left: 0;
-        z-index: 2;
         min-width: 180px;
         max-width: 180px;
         background: #fff;
@@ -1942,9 +1933,7 @@ function buildStudentGridHTML(subj, records) {
         padding: 8px 10px;
         border-right: 2px solid var(--border-c);
         border-bottom: 1.5px solid rgba(15,23,42,.06);
-        position: sticky;
-        left: 180px;
-        z-index: 2;
+
         min-width: 90px;
         text-align: center;
         vertical-align: middle;
