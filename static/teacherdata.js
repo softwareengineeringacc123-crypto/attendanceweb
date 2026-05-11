@@ -243,6 +243,36 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Logout ──
   var lb = document.getElementById('logoutBtn');
   if (lb) lb.onclick = function() { window.location.href = '/logout'; };
+  // ── Mobile Sidebar ──
+const hamburger      = document.getElementById('hamburger');
+const mainSidebar    = document.getElementById('mainSidebar');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+function openSidebar() {
+  mainSidebar.classList.add('open');
+  sidebarOverlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+  
+}
+
+function closeSidebar() {
+  mainSidebar.classList.remove('open');
+  sidebarOverlay.classList.remove('active');
+  document.body.style.overflow = '';
+  
+}
+
+if (hamburger) hamburger.addEventListener('click', openSidebar);
+if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+// Close sidebar when any nav link is tapped on mobile
+mainSidebar.addEventListener('click', (e) => {
+  if (window.innerWidth > 768) return;
+  const isNavItem = e.target.closest('.nav-item, .sb-subject-clickable, .sb-new-class-btn');
+  if (isNavItem) {
+    setTimeout(closeSidebar, 150); // small delay so the tap feels responsive
+  }
+});
 
   // ── Navigation View Switchers ──
   document.querySelectorAll('.nav-item').forEach(nav => {

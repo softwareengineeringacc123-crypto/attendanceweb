@@ -200,7 +200,8 @@ body::after {
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow: hidden;
+  overflow-y: auto !important;
+  overflow: hidden !important;
   transition: width .3s cubic-bezier(.22,1,.36,1);
   box-shadow: 4px 0 24px rgba(11,18,32,.4);
   z-index: 10;
@@ -1147,4 +1148,36 @@ header {
   }
 
   .att-th-date-day { font-size: 13px !important; }
+}
+/* ── Mobile sidebar open state fix ── */
+@media (max-width: 768px) {
+  .sidebar {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    background: linear-gradient(180deg, rgba(11,31,92,.99) 0%, rgba(14,40,110,.99) 50%, rgba(10,70,180,.97) 100%) !important;
+    z-index: 200 !important;
+  }
+
+  .sidebar.open {
+    transform: translateX(0) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-shadow: 6px 0 32px rgba(0,0,0,.6) !important;
+  }
+
+  .sidebar-top,
+  .sidebar-nav {
+    display: flex !important;
+    flex-direction: column !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    position: relative !important;
+    z-index: 1 !important;
+  }
+
+  .sidebar-nav {
+    overflow-y: auto !important;
+    flex: 1 !important;
+    padding-bottom: 24px !important;
+  }
 }
